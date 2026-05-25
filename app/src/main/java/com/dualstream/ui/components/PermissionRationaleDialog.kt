@@ -10,7 +10,8 @@ import com.dualstream.ui.theme.Typography
 fun PermissionRationaleDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
-    rationaleText: String
+    rationaleText: String,
+    confirmButtonText: String = "Grant Permissions"
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -28,7 +29,7 @@ fun PermissionRationaleDialog(
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text(text = "Grant Permissions")
+                Text(text = confirmButtonText)
             }
         },
         dismissButton = {

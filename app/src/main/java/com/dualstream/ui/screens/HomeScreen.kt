@@ -22,6 +22,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import com.google.accompanist.permissions.PermissionStatus
 import com.dualstream.ui.components.PermissionRationaleDialog
 import com.dualstream.ui.theme.*
 import com.dualstream.util.PermissionUtils
@@ -40,9 +45,21 @@ fun HomeScreen(
 
     val showRationale = remember { mutableStateOf(false) }
 
+    val prefs = remember(context) { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
+    val hasRequested = remember { mutableStateOf(prefs.getBoolean("has_requested_permissions", false)) }
+
+    val isPermanentlyDenied = remember(permissionState.permissions, hasRequested.value) {
+        hasRequested.value && permissionState.permissions.any { permission ->
+            val status = permission.status
+            status is PermissionStatus.Denied && !status.shouldShowRationale
+        }
+    }
+
     LaunchedEffect(Unit) {
         if (!permissionState.allPermissionsGranted) {
             permissionState.launchMultiplePermissionRequest()
+            prefs.edit().putBoolean("has_requested_permissions", true).apply()
+            hasRequested.value = true
         }
     }
 
@@ -51,9 +68,23 @@ fun HomeScreen(
             onDismiss = { showRationale.value = false },
             onConfirm = {
                 showRationale.value = false
-                permissionState.launchMultiplePermissionRequest()
+                if (isPermanentlyDenied) {
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.fromParts("package", context.packageName, null)
+                    }
+                    context.startActivity(intent)
+                } else {
+                    prefs.edit().putBoolean("has_requested_permissions", true).apply()
+                    hasRequested.value = true
+                    permissionState.launchMultiplePermissionRequest()
+                }
             },
-            rationaleText = "DualStream needs Nearby Devices, Notifications, and Audio recording permissions to sync and stream audio."
+            rationaleText = if (isPermanentlyDenied) {
+                "Permissions have been permanently denied. Please tap 'Open Settings' to enable Nearby Devices, Bluetooth, Notifications, and Audio recording permissions."
+            } else {
+                "DualStream needs Nearby Devices, Bluetooth, Notifications, and Audio recording permissions to sync and stream audio."
+            },
+            confirmButtonText = if (isPermanentlyDenied) "Open Settings" else "Grant Permissions"
         )
     }
 
