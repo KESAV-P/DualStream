@@ -148,11 +148,8 @@ class SenderForegroundService : Service() {
                     .map { pcmBytes ->
                         val level = audioMixer.calculateLevel(pcmBytes)
                         _audioLevel.value = level
-                        // Downmix stereo PCM → mono before encoding.
-                        // AudioCaptureManager captures CHANNEL_IN_STEREO (interleaved L,R pairs).
-                        // Our encoder is configured for 1 channel, so we must average L+R → mono.
-                        val monoPcm = stereoToMono(pcmBytes)
-                        opusEncoder.encode(monoPcm)
+                        // Stream stereo directly to the stereo Opus encoder
+                        opusEncoder.encode(pcmBytes)
                     }
                     .filterNotNull()
                     .collect { encodedFrame ->
@@ -170,24 +167,6 @@ class SenderForegroundService : Service() {
                 } catch (e: Exception) {}
             }
         }
-    }
-
-    /**
-     * Downmix stereo PCM (16-bit little-endian interleaved L,R) to mono.
-     * Each pair of consecutive 2-byte samples (L, R) is averaged into one mono sample.
-     */
-    private fun stereoToMono(stereo: ByteArray): ByteArray {
-        val monoSampleCount = stereo.size / 4  // 4 bytes per stereo sample pair
-        val mono = ByteArray(monoSampleCount * 2)
-        for (i in 0 until monoSampleCount) {
-            val byteIdx = i * 4
-            val lSample = (stereo[byteIdx].toInt() and 0xFF) or (stereo[byteIdx + 1].toInt() shl 8)
-            val rSample = (stereo[byteIdx + 2].toInt() and 0xFF) or (stereo[byteIdx + 3].toInt() shl 8)
-            val monoSample = ((lSample.toShort().toInt() + rSample.toShort().toInt()) / 2).toShort()
-            mono[i * 2]     = (monoSample.toInt() and 0xFF).toByte()
-            mono[i * 2 + 1] = (monoSample.toInt() shr 8 and 0xFF).toByte()
-        }
-        return mono
     }
 
     private fun stopStreamingPipeline() {

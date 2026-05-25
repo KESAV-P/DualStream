@@ -8,54 +8,64 @@ class AudioMixer @Inject constructor() {
 
     /**
      * Mix two audio sources into a stereo output frame with strict channel isolation:
-     *  - Left  channel output = Phone A's audio (stereo downmixed to mono)
-     *  - Right channel output = Phone B's audio (mono or stereo downmixed to mono)
+     *  - Left  channel output = Phone A's received audio (stereo downmixed to mono)
+     *  - Right channel output = Phone B's local audio (mono or stereo downmixed to mono)
      *
      * Input PCM format: 16-bit little-endian samples.
-     *  - [leftStereoInput]  Phone A's local audio — stereo interleaved (L0,L1,R0,R1 ...)
-     *  - [rightInput]       Phone B's decoded audio — mono (M0,M1 ...) or stereo interleaved
+     *  - [localPcm]     Phone B's local audio (ExoPlayer/WebView)
+     *  - [receivedPcm]  Phone A's received audio from nearby network
      *
      * Output: stereo interleaved PCM [BYTES_PER_FRAME bytes] — L0,L1,R0,R1,...
      */
-    fun mix(leftStereoInput: ByteArray, rightInput: ByteArray): ByteArray {
+    fun mix(localPcm: ByteArray, receivedPcm: ByteArray): ByteArray {
         val output = ByteArray(BYTES_PER_FRAME)
         val totalStereoSamples = BYTES_PER_FRAME / 4  // each stereo sample = 4 bytes (L+R)
 
-        // Determine if Phone B's decoded PCM is mono or stereo based on size
-        val rightIsMono = rightInput.size <= (BYTES_PER_FRAME / 2 + 16)
+        val localIsMono = localPcm.size <= (BYTES_PER_FRAME / 2 + 16)
+        val receivedIsMono = receivedPcm.size <= (BYTES_PER_FRAME / 2 + 16)
 
         for (s in 0 until totalStereoSamples) {
             val outByteIdx = s * 4  // position in output stereo interleaved buffer
 
-            // ── LEFT OUTPUT: Phone A stereo downmixed to mono ──────────────────
-            val leftMonoSample = if (s * 4 + 3 < leftStereoInput.size) {
-                val lSample = readSample(leftStereoInput, s * 4)       // Left channel of Phone A
-                val rSample = readSample(leftStereoInput, s * 4 + 2)   // Right channel of Phone A
-                ((lSample.toLong() + rSample.toLong()) / 2L).toShort() // Average → mono
-            } else {
-                0.toShort()
-            }
-            writeSample(output, outByteIdx, leftMonoSample)      // L bytes of output
-
-            // ── RIGHT OUTPUT: Phone B mono placed in right channel ─────────────
-            val rightMonoSample = if (rightIsMono) {
-                // rightInput is mono: each 2 bytes = one sample
-                if (s * 2 + 1 < rightInput.size) {
-                    readSample(rightInput, s * 2)
+            // ── LEFT OUTPUT: Phone A (received) downmixed to mono ──────────────────
+            val leftSample = if (receivedIsMono) {
+                val idx = s * 2
+                if (idx + 1 < receivedPcm.size) {
+                    readSample(receivedPcm, idx)
                 } else {
                     0.toShort()
                 }
             } else {
-                // rightInput is stereo: downmix L+R → mono
-                if (s * 4 + 3 < rightInput.size) {
-                    val lSample = readSample(rightInput, s * 4)
-                    val rSample = readSample(rightInput, s * 4 + 2)
+                val idx = s * 4
+                if (idx + 3 < receivedPcm.size) {
+                    val lSample = readSample(receivedPcm, idx)
+                    val rSample = readSample(receivedPcm, idx + 2)
                     ((lSample.toLong() + rSample.toLong()) / 2L).toShort()
                 } else {
                     0.toShort()
                 }
             }
-            writeSample(output, outByteIdx + 2, rightMonoSample) // R bytes of output
+            writeSample(output, outByteIdx, leftSample)      // L bytes of output
+
+            // ── RIGHT OUTPUT: Phone B (local) downmixed to mono ─────────────
+            val rightSample = if (localIsMono) {
+                val idx = s * 2
+                if (idx + 1 < localPcm.size) {
+                    readSample(localPcm, idx)
+                } else {
+                    0.toShort()
+                }
+            } else {
+                val idx = s * 4
+                if (idx + 3 < localPcm.size) {
+                    val lSample = readSample(localPcm, idx)
+                    val rSample = readSample(localPcm, idx + 2)
+                    ((lSample.toLong() + rSample.toLong()) / 2L).toShort()
+                } else {
+                    0.toShort()
+                }
+            }
+            writeSample(output, outByteIdx + 2, rightSample) // R bytes of output
         }
 
         return output

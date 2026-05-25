@@ -1,6 +1,6 @@
 package com.dualstream.model
 
 enum class AppMode {
-    SENDER,    // Phone B — captures and streams audio
-    RECEIVER   // Phone A — receives, mixes, plays to earbuds
+    SENDER,    // Phone A — captures and streams audio
+    RECEIVER   // Phone B — receives, mixes, plays to earbuds
 }

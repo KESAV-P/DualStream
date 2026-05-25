@@ -79,7 +79,7 @@ fun SenderScreen(
                 title = {
                     Column {
                         Text("Sender", style = MaterialTheme.typography.titleMedium, color = iOSWhite)
-                        Text("Phone B", fontSize = 12.sp, color = iOSSecondary)
+                        Text("Phone A", fontSize = 12.sp, color = iOSSecondary)
                     }
                 },
                 navigationIcon = {
@@ -152,7 +152,7 @@ fun SenderScreen(
 
                 IosStatRow(
                     label = "Bitrate",
-                    value = if (isStreaming) "64 kbps" else "—",
+                    value = if (isStreaming) "128 kbps" else "—",
                     valueColor = if (isStreaming) iOSGreen else iOSSecondary,
                     isFirst = true,
                     isLast = false

@@ -260,13 +260,14 @@ class ReceiverForegroundService : Service() {
                     jitterBuffer.poll()
                 }
 
-                val mixed = audioMixer.mix(leftPcm, rightPcm)
+                // localPcm is Phone B's local audio (leftPcm), receivedPcm is Phone A's received audio (rightPcm)
+                val mixed = audioMixer.mix(localPcm = leftPcm, receivedPcm = rightPcm)
                 
                 writeAudioToTrack(mixed)
 
-                // Update Stats
-                val leftLevel = audioMixer.calculateLeftLevel(leftPcm)
-                val rightLevel = audioMixer.calculateRightLevel(rightPcm)
+                // Update Stats (Phone A received stream -> Left ear; Phone B local stream -> Right ear)
+                val leftLevel = audioMixer.calculateLevel(rightPcm)
+                val rightLevel = audioMixer.calculateLevel(leftPcm)
                 
                 _audioStats.value = _audioStats.value.copy(
                     leftChannelLevel = leftLevel,
@@ -274,7 +275,7 @@ class ReceiverForegroundService : Service() {
                     bufferHealth = jitterBuffer.bufferHealthPercent,
                     packetsReceived = jitterBuffer.packetsReceived,
                     packetsDropped = jitterBuffer.packetsDropped,
-                    bitrateKbps = 64 // constant for Opus configured profile
+                    bitrateKbps = 128 // Opus configured profile is 128kbps stereo
                 )
 
                 // Maintain 20ms frame timing

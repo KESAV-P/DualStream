@@ -169,8 +169,8 @@ fun HomeScreen(
                 emoji = "📡",
                 iconBg = iOSPurple,
                 title = "Sender",
-                subtitle = "Stream Phone B's audio",
-                tag = "Phone B",
+                subtitle = "Stream Phone A's audio",
+                tag = "Phone A",
                 isFirst = true,
                 isLast = false,
                 onClick = {
@@ -193,7 +193,7 @@ fun HomeScreen(
                 iconBg = iOSBlue,
                 title = "Receiver",
                 subtitle = "Mix and play both streams",
-                tag = "Phone A",
+                tag = "Phone B",
                 isFirst = false,
                 isLast = true,
                 onClick = {

@@ -53,7 +53,7 @@ class ReceiverViewModel @Inject constructor(
     }
 
     fun sendStartStreamCommand() {
-        Log.d("DualStream", "Sending START_STREAM control command to Phone B")
+        Log.d("DualStream", "Sending START_STREAM control command to Phone A")
         val json = JSONObject().apply {
             put("type", "START_STREAM")
         }
@@ -61,7 +61,7 @@ class ReceiverViewModel @Inject constructor(
     }
 
     fun sendStopStreamCommand() {
-        Log.d("DualStream", "Sending STOP_STREAM control command to Phone B")
+        Log.d("DualStream", "Sending STOP_STREAM control command to Phone A")
         val json = JSONObject().apply {
             put("type", "STOP_STREAM")
         }

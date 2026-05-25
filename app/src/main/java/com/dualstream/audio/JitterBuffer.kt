@@ -12,6 +12,9 @@ class JitterBuffer @Inject constructor() {
     private val queue = LinkedBlockingDeque<ByteArray>(capacity)
     private val silenceBuffer = ByteArray(BYTES_PER_FRAME)
 
+    @Volatile
+    private var isBuffering = true
+
     private val _packetsReceived = AtomicLong(0L)
     private val _packetsDropped = AtomicLong(0L)
 
@@ -37,16 +40,25 @@ class JitterBuffer @Inject constructor() {
     }
 
     fun poll(): ByteArray {
-        return try {
-            queue.poll(40, TimeUnit.MILLISECONDS) ?: silenceBuffer
-        } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt()
-            silenceBuffer
+        if (isBuffering) {
+            if (queue.size < 3) {
+                return silenceBuffer
+            } else {
+                isBuffering = false
+            }
         }
+
+        val frame = queue.poll()
+        if (frame == null) {
+            isBuffering = true
+            return silenceBuffer
+        }
+        return frame
     }
 
     fun clear() {
         queue.clear()
+        isBuffering = true
         _packetsReceived.set(0)
         _packetsDropped.set(0)
     }

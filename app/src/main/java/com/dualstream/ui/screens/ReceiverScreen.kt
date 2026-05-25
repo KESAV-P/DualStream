@@ -56,7 +56,7 @@ fun ReceiverScreen(
                 title = {
                     Column {
                         Text("Receiver", style = MaterialTheme.typography.titleMedium, color = iOSWhite)
-                        Text("Phone A — Master Device", fontSize = 12.sp, color = iOSSecondary)
+                        Text("Phone B — Master Device", fontSize = 12.sp, color = iOSSecondary)
                     }
                 },
                 navigationIcon = {
