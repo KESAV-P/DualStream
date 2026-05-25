@@ -230,7 +230,7 @@ fun ReceiverScreen(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(280.dp)
+                            .height(480.dp)
                             .clip(
                                 RoundedCornerShape(
                                     topStart = 0.dp, topEnd = 0.dp,
