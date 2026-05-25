@@ -14,15 +14,17 @@ class OpusCodec {
 
     fun initEncoder() {
         try {
-            val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_OPUS, SAMPLE_RATE, CHANNEL_COUNT).apply {
-                setInteger(MediaFormat.KEY_BIT_RATE, 64000)
+            // Encode mono at 96kbps — Phone B only needs one channel (placed in Right earbud).
+            // Mono at 96kbps sounds far better than stereo at 64kbps.
+            val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_OPUS, SAMPLE_RATE, 1).apply {
+                setInteger(MediaFormat.KEY_BIT_RATE, 96000)
                 setInteger(MediaFormat.KEY_COMPLEXITY, 5)
             }
             encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_OPUS).apply {
                 configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
                 start()
             }
-            Log.d("DualStream", "Opus Encoder initialized successfully")
+            Log.d("DualStream", "Opus Encoder initialized (mono, 96kbps)")
         } catch (e: Exception) {
             Log.e("DualStream", "Failed to initialize Opus Encoder", e)
         }
@@ -30,15 +32,13 @@ class OpusCodec {
 
     fun initDecoder() {
         try {
-            val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_OPUS, SAMPLE_RATE, CHANNEL_COUNT)
-            
-            // Opus decoder on Android requires configuration. In some cases, we need to pass CSD-0,
-            // but standard audio/opus decoder can be initialized with basic MediaFormat and started.
+            // Decode mono — matches the mono encoder on Phone B.
+            val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_OPUS, SAMPLE_RATE, 1)
             decoder = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_AUDIO_OPUS).apply {
                 configure(format, null, null, 0)
                 start()
             }
-            Log.d("DualStream", "Opus Decoder initialized successfully")
+            Log.d("DualStream", "Opus Decoder initialized (mono)")
         } catch (e: Exception) {
             Log.e("DualStream", "Failed to initialize Opus Decoder", e)
         }
@@ -48,7 +48,7 @@ class OpusCodec {
     fun encode(pcmBytes: ByteArray): ByteArray? {
         val codec = encoder ?: return null
         try {
-            val inputBufferIndex = codec.dequeueInputBuffer(1000)
+            val inputBufferIndex = codec.dequeueInputBuffer(10000) // 10ms — avoid dropped frames
             if (inputBufferIndex >= 0) {
                 val inputBuffer = codec.getInputBuffer(inputBufferIndex)
                 if (inputBuffer != null) {
@@ -64,7 +64,7 @@ class OpusCodec {
                 }
             }
 
-            val outputBufferIndex = codec.dequeueOutputBuffer(bufferInfo, 1000)
+            val outputBufferIndex = codec.dequeueOutputBuffer(bufferInfo, 10000) // 10ms timeout
             if (outputBufferIndex >= 0) {
                 val outputBuffer = codec.getOutputBuffer(outputBufferIndex)
                 if (outputBuffer != null) {
@@ -85,7 +85,7 @@ class OpusCodec {
     fun decode(opusBytes: ByteArray): ByteArray? {
         val codec = decoder ?: return null
         try {
-            val inputBufferIndex = codec.dequeueInputBuffer(1000)
+            val inputBufferIndex = codec.dequeueInputBuffer(10000) // 10ms — avoid dropped frames
             if (inputBufferIndex >= 0) {
                 val inputBuffer = codec.getInputBuffer(inputBufferIndex)
                 if (inputBuffer != null) {
@@ -101,7 +101,7 @@ class OpusCodec {
                 }
             }
 
-            val outputBufferIndex = codec.dequeueOutputBuffer(bufferInfo, 1000)
+            val outputBufferIndex = codec.dequeueOutputBuffer(bufferInfo, 10000) // 10ms timeout
             if (outputBufferIndex >= 0) {
                 val outputBuffer = codec.getOutputBuffer(outputBufferIndex)
                 if (outputBuffer != null) {
