@@ -1,21 +1,22 @@
 package com.dualstream.ui.screens
 
-import android.app.Activity
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Headset
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -36,7 +37,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val requiredPermissions = remember { PermissionUtils.getRequiredPermissions(context) }
     val permissionState = rememberMultiplePermissionsState(permissions = requiredPermissions)
-    
+
     val showRationale = remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -56,141 +57,208 @@ fun HomeScreen(
         )
     }
 
+    // Subtle breathing animation on the logo icon
+    val infiniteTransition = rememberInfiniteTransition(label = "LogoBreath")
+    val logoScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.06f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2800, easing = EaseInOutSine),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "LogoScale"
+    )
+    val logoAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.5f,
+        targetValue = 0.9f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2800, easing = EaseInOutSine),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "LogoAlpha"
+    )
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(DarkBackground)
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween
+            .background(iOSBlack)
+            .padding(horizontal = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Logo Section
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(top = 48.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Headset,
-                contentDescription = "Earbuds Logo",
-                tint = ElectricBlue,
-                modifier = Modifier.size(80.dp)
+        Spacer(modifier = Modifier.weight(1f))
+
+        // ── App Identity ──────────────────────────────────────────────────────
+        Box(contentAlignment = Alignment.Center) {
+            // Glow halo behind the icon
+            Box(
+                modifier = Modifier
+                    .size(100.dp)
+                    .scale(logoScale)
+                    .background(
+                        iOSBlue.copy(alpha = logoAlpha * 0.18f),
+                        CircleShape
+                    )
             )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "DualStream",
-                style = Typography.titleLarge,
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Black,
-                color = ElectricBlue
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Sync your earbuds. Split your world.",
-                style = Typography.bodyMedium,
-                color = LightGrey
-            )
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .background(iOSGrayBg, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = "🎧", fontSize = 32.sp)
+            }
         }
 
-        // Choice Section
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = "DualStream",
+            fontSize = 34.sp,
+            fontWeight = FontWeight.Bold,
+            color = iOSWhite,
+            letterSpacing = 0.37.sp
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = "Sync your earbuds. Split your world.",
+            fontSize = 15.sp,
+            color = iOSSecondary,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        // ── Mode Selection (iOS-style grouped list) ───────────────────────────
         Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(iOSGrayBg, RoundedCornerShape(14.dp))
         ) {
-            ModeCard(
-                title = "📡 Sender Mode",
-                subtitle = "Stream your phone's audio to the other device",
+            ModeRow(
+                emoji = "📡",
+                iconBg = iOSPurple,
+                title = "Sender",
+                subtitle = "Stream Phone B's audio",
                 tag = "Phone B",
-                colors = listOf(PurpleAccent.copy(alpha = 0.85f), CardBackground),
+                isFirst = true,
+                isLast = false,
                 onClick = {
-                    if (permissionState.allPermissionsGranted) {
-                        onNavigateToSender()
-                    } else {
-                        showRationale.value = true
-                    }
+                    if (permissionState.allPermissionsGranted) onNavigateToSender()
+                    else showRationale.value = true
                 }
             )
 
-            ModeCard(
-                title = "🎧 Receiver Mode",
-                subtitle = "Receive, mix and play both audio streams",
-                tag = "Phone A — Master Device",
-                colors = listOf(ElectricBlue.copy(alpha = 0.85f), CardBackground),
+            // Thin divider (inset, iOS style)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 72.dp)
+                    .height(0.5.dp)
+                    .background(iOSSeparator)
+            )
+
+            ModeRow(
+                emoji = "🎧",
+                iconBg = iOSBlue,
+                title = "Receiver",
+                subtitle = "Mix and play both streams",
+                tag = "Phone A",
+                isFirst = false,
+                isLast = true,
                 onClick = {
-                    if (permissionState.allPermissionsGranted) {
-                        onNavigateToReceiver()
-                    } else {
-                        showRationale.value = true
-                    }
+                    if (permissionState.allPermissionsGranted) onNavigateToReceiver()
+                    else showRationale.value = true
                 }
             )
         }
 
-        // Footnote
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Footer footnote
         Text(
             text = "Both phones must be on the same Wi-Fi network",
-            style = Typography.labelMedium,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(bottom = 24.dp)
+            fontSize = 13.sp,
+            color = iOSTertiary,
+            textAlign = TextAlign.Center
         )
+
+        Spacer(modifier = Modifier.height(40.dp))
     }
 }
 
 @Composable
-fun ModeCard(
+private fun ModeRow(
+    emoji: String,
+    iconBg: Color,
     title: String,
     subtitle: String,
     tag: String,
-    colors: List<Color>,
+    isFirst: Boolean,
+    isLast: Boolean,
     onClick: () -> Unit
 ) {
-    Card(
+    val topCorner = if (isFirst) 14.dp else 0.dp
+    val bottomCorner = if (isLast) 14.dp else 0.dp
+
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(140.dp)
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+            .clip(
+                RoundedCornerShape(
+                    topStart = topCorner, topEnd = topCorner,
+                    bottomStart = bottomCorner, bottomEnd = bottomCorner
+                )
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        // Colored icon badge
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .background(Brush.verticalGradient(colors))
-                .padding(20.dp)
+                .size(34.dp)
+                .background(iconBg, RoundedCornerShape(8.dp)),
+            contentAlignment = Alignment.Center
         ) {
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = title,
-                        style = Typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    Surface(
-                        color = Color.White.copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(6.dp)
-                    ) {
-                        Text(
-                            text = tag,
-                            style = Typography.labelMedium,
-                            color = Color.White,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-                }
-                
-                Text(
-                    text = subtitle,
-                    style = Typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.85f)
-                )
-            }
+            Text(text = emoji, fontSize = 17.sp)
         }
+
+        Spacer(modifier = Modifier.width(14.dp))
+
+        // Labels
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                color = iOSWhite
+            )
+            Text(
+                text = subtitle,
+                fontSize = 13.sp,
+                color = iOSSecondary
+            )
+        }
+
+        // Tag chip + chevron
+        Box(
+            modifier = Modifier
+                .background(iOSLightGrayBg, RoundedCornerShape(6.dp))
+                .padding(horizontal = 8.dp, vertical = 3.dp)
+        ) {
+            Text(
+                text = tag,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = iOSSecondary
+            )
+        }
+        Spacer(modifier = Modifier.width(6.dp))
+        Icon(
+            imageVector = Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = iOSTertiary,
+            modifier = Modifier.size(16.dp)
+        )
     }
 }

@@ -1,84 +1,102 @@
 package com.dualstream.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.dualstream.ui.theme.ErrorRed
-import com.dualstream.ui.theme.GreyText
-import com.dualstream.ui.theme.SuccessGreen
-import com.dualstream.ui.theme.Typography
-import com.dualstream.ui.theme.WarningAmber
+import androidx.compose.ui.unit.sp
+import com.dualstream.ui.theme.*
 
 @Composable
 fun AudioLevelBar(
     level: Float,
     label: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    activeColor: Color = iOSBlue,
+    showPercentage: Boolean = true
 ) {
-    // Smooth transition over 100ms
+    // Spring animation for a natural, elastic feel
     val animatedLevel by animateFloatAsState(
         targetValue = level.coerceIn(0f, 1f),
-        animationSpec = tween(durationMillis = 100),
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f),
         label = "AudioLevel"
     )
 
     Column(modifier = modifier) {
-        Text(
-            text = label,
-            style = Typography.bodyMedium,
-            color = GreyText
-        )
+        // Header row: label on left, percentage on right
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = iOSSecondary
+            )
+            if (showPercentage) {
+                Text(
+                    text = "${(animatedLevel * 100).toInt()}%",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (animatedLevel > 0.8f) iOSRed
+                            else if (animatedLevel > 0.5f) iOSOrange
+                            else activeColor
+                )
+            }
+        }
+
         Spacer(modifier = Modifier.height(6.dp))
-        
+
+        // Thin pill-shaped level bar (iOS style — 5dp height)
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(24.dp)
-                .clip(RoundedCornerShape(6.dp))
+                .height(5.dp)
+                .clip(RoundedCornerShape(50))
         ) {
             val width = size.width
             val height = size.height
+            val cornerR = CornerRadius(height / 2, height / 2)
 
-            // Background track
-            drawRect(
-                color = Color(0xFF1E2436),
-                size = Size(width, height)
+            // Track background
+            drawRoundRect(
+                color = iOSLightGrayBg,
+                size = Size(width, height),
+                cornerRadius = cornerR
             )
 
-            // Active bar width
-            val activeWidth = width * animatedLevel
+            // Active fill — color shifts green→orange→red near clipping
+            val fillColor = when {
+                animatedLevel > 0.85f -> iOSRed
+                animatedLevel > 0.55f -> iOSOrange
+                else                  -> activeColor
+            }
 
-            // Gradient brush for the level indicator
-            val gradientBrush = Brush.horizontalGradient(
-                colors = listOf(
-                    SuccessGreen,
-                    WarningAmber,
-                    ErrorRed
-                ),
-                startX = 0f,
-                endX = width
-            )
-
-            // Draw active level
+            val activeWidth = (width * animatedLevel).coerceAtLeast(0f)
             if (activeWidth > 0f) {
-                drawRect(
-                    brush = gradientBrush,
-                    size = Size(activeWidth, height)
+                drawRoundRect(
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(fillColor.copy(alpha = 0.7f), fillColor),
+                        startX = 0f,
+                        endX = activeWidth
+                    ),
+                    size = Size(activeWidth, height),
+                    cornerRadius = cornerR
                 )
             }
         }

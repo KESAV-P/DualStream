@@ -9,7 +9,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -24,7 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -48,11 +47,11 @@ fun SenderScreen(
     val connectionState by viewModel.connectionState.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
     val audioLevel by viewModel.audioLevel.collectAsState()
+    val scrollState = rememberScrollState()
 
     val mediaProjectionManager = remember {
         context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
     }
-
     val captureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -61,10 +60,9 @@ fun SenderScreen(
         }
     }
 
-    val scrollState = rememberScrollState()
-
-    // Dynamic checks for permissions
-    val recordAudioGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+    val recordAudioGranted = ContextCompat.checkSelfPermission(
+        context, Manifest.permission.RECORD_AUDIO
+    ) == PackageManager.PERMISSION_GRANTED
     val nearbyWifiGranted = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.NEARBY_WIFI_DEVICES) == PackageManager.PERMISSION_GRANTED
     } else {
@@ -72,169 +70,293 @@ fun SenderScreen(
     }
     val notificationsGranted = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-    } else {
-        true
-    }
+    } else true
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Phone B — Sender Mode", style = Typography.titleMedium) },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = OnSurfaceColor)
+                title = {
+                    Column {
+                        Text("Sender", style = MaterialTheme.typography.titleMedium, color = iOSWhite)
+                        Text("Phone B", fontSize = 12.sp, color = iOSSecondary)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBackground)
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = iOSBlue)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = iOSBlack)
             )
         },
-        containerColor = DarkBackground
+        containerColor = iOSBlack
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
                 .verticalScroll(scrollState)
-                .padding(24.dp),
+                .padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 1. Connection Status Card
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // ── 1. Connection Status ──────────────────────────────────────────
             ConnectionStatusCard(state = connectionState)
 
-            // 2. Audio Level Visualizer
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = CardBackground),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    AudioLevelBar(
-                        level = audioLevel,
-                        label = "Captured System Audio Level"
-                    )
+            // ── 2. Central Stream Button ──────────────────────────────────────
+            Spacer(modifier = Modifier.height(16.dp))
+
+            StreamButton(
+                isStreaming = isStreaming,
+                onToggle = {
+                    if (isStreaming) {
+                        viewModel.stopSender()
+                    } else {
+                        val intent = mediaProjectionManager.createScreenCaptureIntent()
+                        captureLauncher.launch(intent)
+                    }
                 }
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // ── 3. Audio Level ────────────────────────────────────────────────
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(iOSGrayBg, RoundedCornerShape(14.dp))
+                    .padding(16.dp)
+            ) {
+                IosGroupHeader(text = "AUDIO OUTPUT")
+                Spacer(modifier = Modifier.height(10.dp))
+                AudioLevelBar(
+                    level = audioLevel,
+                    label = "Captured System Audio",
+                    activeColor = iOSPurple
+                )
             }
 
-            // 3. Central Stream Action Button
-            Box(
+            // ── 4. Stats ──────────────────────────────────────────────────────
+            Column(
                 modifier = Modifier
-                    .weight(1f)
                     .fillMaxWidth()
-                    .heightIn(min = 200.dp),
-                contentAlignment = Alignment.Center
+                    .background(iOSGrayBg, RoundedCornerShape(14.dp))
             ) {
-                val infiniteTransition = rememberInfiniteTransition(label = "ButtonGlow")
-                val glowRadius by infiniteTransition.animateFloat(
-                    initialValue = 0f,
-                    targetValue = 24f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(durationMillis = 1000, easing = LinearEasing),
-                        repeatMode = RepeatMode.Reverse
-                    ),
-                    label = "GlowAnim"
+                IosGroupHeader(
+                    text = "STREAM STATUS",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                 )
 
-                val buttonColor = if (isStreaming) ErrorRed else ElectricBlue
-                val buttonText = if (isStreaming) "STOP STREAMING" else "START STREAMING"
+                IosStatRow(
+                    label = "Bitrate",
+                    value = if (isStreaming) "64 kbps" else "—",
+                    valueColor = if (isStreaming) iOSGreen else iOSSecondary,
+                    isFirst = true,
+                    isLast = false
+                )
 
-                Button(
-                    onClick = {
-                        if (isStreaming) {
-                            viewModel.stopSender()
-                        } else {
-                            val intent = mediaProjectionManager.createScreenCaptureIntent()
-                            captureLauncher.launch(intent)
-                        }
-                    },
-                    modifier = Modifier
-                        .size(160.dp)
-                        .clip(CircleShape)
-                        .drawBehind {
-                            if (isStreaming) {
-                                drawCircle(
-                                    color = ErrorRed.copy(alpha = 0.35f),
-                                    radius = size.minDimension / 2 + glowRadius
-                                )
-                            }
-                        },
-                    colors = ButtonDefaults.buttonColors(containerColor = buttonColor),
-                    shape = CircleShape
-                ) {
-                    Text(
-                        text = buttonText,
-                        style = Typography.bodyLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        fontSize = 14.sp
-                    )
-                }
+                IosStatRow(
+                    label = "Active Link",
+                    value = if (connectionState is ConnectionState.Connected) "Good" else "No Link",
+                    valueColor = if (connectionState is ConnectionState.Connected) iOSGreen else iOSSecondary,
+                    isFirst = false,
+                    isLast = true
+                )
             }
 
-            // 4. Stats Row Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = CardBackground),
-                shape = RoundedCornerShape(12.dp)
+            // ── 5. Permissions ────────────────────────────────────────────────
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(iOSGrayBg, RoundedCornerShape(14.dp))
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceAround
-                ) {
-                    StatItem(label = "Bitrate", value = if (isStreaming) "64 kbps" else "0 kbps")
-                    StatItem(label = "Active Link", value = if (connectionState is ConnectionState.Connected) "Good" else "No Link")
-                }
+                IosGroupHeader(
+                    text = "PERMISSIONS",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                )
+
+                PermissionRow(
+                    label = "Record System Audio",
+                    granted = recordAudioGranted,
+                    isFirst = true,
+                    isLast = false
+                )
+                IosRowDivider()
+                PermissionRow(
+                    label = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU)
+                        "Nearby Wi-Fi Devices" else "Location Access",
+                    granted = nearbyWifiGranted,
+                    isFirst = false,
+                    isLast = false
+                )
+                IosRowDivider()
+                PermissionRow(
+                    label = "Notifications",
+                    granted = notificationsGranted,
+                    isFirst = false,
+                    isLast = true
+                )
             }
 
-            // 5. Permissions check Section
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = CardBackground),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text("Service Permissions", style = Typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Divider(color = SurfaceColor, modifier = Modifier.padding(vertical = 4.dp))
-                    
-                    PermissionRow(label = "Record System Audio", granted = recordAudioGranted)
-                    PermissionRow(
-                        label = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) "Nearby WiFi Devices" else "Location access",
-                        granted = nearbyWifiGranted
-                    )
-                    PermissionRow(label = "Notifications", granted = notificationsGranted)
-                }
+            Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+}
+
+// ── Large pulsing circular stream button ────────────────────────────────────────
+@Composable
+private fun StreamButton(
+    isStreaming: Boolean,
+    onToggle: () -> Unit
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "StreamPulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.18f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = EaseInOutSine),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "PulseScale"
+    )
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = EaseInOutSine),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "PulseAlpha"
+    )
+
+    val activeColor = if (isStreaming) iOSRed else iOSBlue
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.size(160.dp)
+    ) {
+        // Animated glow ring (only when streaming)
+        if (isStreaming) {
+            Box(
+                modifier = Modifier
+                    .size(160.dp)
+                    .scale(pulseScale)
+                    .background(activeColor.copy(alpha = pulseAlpha), CircleShape)
+            )
+        }
+        // Outer ring
+        Box(
+            modifier = Modifier
+                .size(140.dp)
+                .background(activeColor.copy(alpha = 0.12f), CircleShape)
+        )
+        // Main button
+        Button(
+            onClick = onToggle,
+            modifier = Modifier
+                .size(116.dp)
+                .clip(CircleShape),
+            colors = ButtonDefaults.buttonColors(containerColor = activeColor),
+            shape = CircleShape,
+            contentPadding = PaddingValues(0.dp)
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = if (isStreaming) "■" else "▶",
+                    fontSize = 24.sp,
+                    color = iOSWhite
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = if (isStreaming) "Stop" else "Start",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = iOSWhite
+                )
             }
         }
     }
 }
 
+// ── Shared iOS-style grouped list helpers ───────────────────────────────────────
+
+@Composable
+private fun IosGroupHeader(text: String, modifier: Modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+    Text(
+        text = text,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = iOSSecondary,
+        letterSpacing = 0.5.sp,
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun IosRowDivider() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp)
+            .height(0.5.dp)
+            .background(iOSSeparator)
+    )
+}
+
+@Composable
+private fun IosStatRow(
+    label: String,
+    value: String,
+    valueColor: Color = iOSWhite,
+    isFirst: Boolean = false,
+    isLast: Boolean = false
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 13.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, fontSize = 16.sp, color = iOSWhite)
+        Text(value, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = valueColor)
+    }
+    if (!isLast) IosRowDivider()
+}
+
 @Composable
 fun StatItem(label: String, value: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text = label, style = Typography.labelMedium, color = GreyText)
+        Text(text = label, fontSize = 13.sp, color = iOSSecondary)
         Spacer(modifier = Modifier.height(4.dp))
-        Text(text = value, style = Typography.bodyLarge, fontWeight = FontWeight.Bold, color = OnSurfaceColor)
+        Text(text = value, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = iOSWhite)
     }
 }
 
 @Composable
-fun PermissionRow(label: String, granted: Boolean) {
+fun PermissionRow(
+    label: String,
+    granted: Boolean,
+    isFirst: Boolean = false,
+    isLast: Boolean = false
+) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 13.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = label, style = Typography.bodyMedium, color = OnSurfaceColor)
+        Text(text = label, fontSize = 16.sp, color = iOSWhite, modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.width(8.dp))
         Icon(
             imageVector = if (granted) Icons.Default.CheckCircle else Icons.Default.Warning,
             contentDescription = if (granted) "Granted" else "Denied",
-            tint = if (granted) SuccessGreen else ErrorRed,
+            tint = if (granted) iOSGreen else iOSRed,
             modifier = Modifier.size(20.dp)
         )
     }
+    if (!isLast) IosRowDivider()
 }

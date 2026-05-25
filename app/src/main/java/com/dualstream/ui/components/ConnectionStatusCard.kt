@@ -1,117 +1,140 @@
 package com.dualstream.ui.components
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.dualstream.model.ConnectionState
-import com.dualstream.ui.theme.CardBackground
-import com.dualstream.ui.theme.ElectricBlue
-import com.dualstream.ui.theme.ErrorRed
-import com.dualstream.ui.theme.GreyText
-import com.dualstream.ui.theme.LightGrey
-import com.dualstream.ui.theme.OnSurfaceColor
-import com.dualstream.ui.theme.SuccessGreen
-import com.dualstream.ui.theme.Typography
-import com.dualstream.ui.theme.WarningAmber
+import com.dualstream.ui.theme.*
 
 @Composable
 fun ConnectionStatusCard(
     state: ConnectionState,
     modifier: Modifier = Modifier
 ) {
-    val backgroundColor = when (state) {
-        is ConnectionState.Connected -> Color(0xFF0F261D) // subtle green tint
-        is ConnectionState.Error -> Color(0xFF2C1418) // subtle red tint
-        is ConnectionState.Discovering, is ConnectionState.Connecting -> Color(0xFF0F202E) // subtle blue tint
-        else -> CardBackground
-    }
-
     val statusColor = when (state) {
-        is ConnectionState.Connected -> SuccessGreen
-        is ConnectionState.Error -> ErrorRed
-        is ConnectionState.Discovering -> ElectricBlue
-        is ConnectionState.Connecting -> WarningAmber
-        else -> GreyText
+        is ConnectionState.Connected   -> iOSGreen
+        is ConnectionState.Error       -> iOSRed
+        is ConnectionState.Discovering -> iOSBlue
+        is ConnectionState.Connecting  -> iOSOrange
+        is ConnectionState.Disconnected-> iOSOrange
+        else                           -> iOSSecondary
     }
 
-    val statusText = when (state) {
-        is ConnectionState.Idle -> "Idle — Ready to connect"
-        is ConnectionState.Discovering -> "Discovering — Looking for peers..."
-        is ConnectionState.Connecting -> "Connecting to ${state.deviceName}..."
-        is ConnectionState.Connected -> "Connected to ${state.deviceName} ✓"
-        is ConnectionState.Error -> "Error: ${state.message}"
-        is ConnectionState.Disconnected -> "Disconnected. Reconnecting..."
+    val statusLabel = when (state) {
+        is ConnectionState.Idle        -> "Not Connected"
+        is ConnectionState.Discovering -> "Scanning…"
+        is ConnectionState.Connecting  -> "Connecting"
+        is ConnectionState.Connected   -> "Connected"
+        is ConnectionState.Error       -> "Error"
+        is ConnectionState.Disconnected-> "Reconnecting"
+    }
+
+    val statusDetail = when (state) {
+        is ConnectionState.Idle        -> "Ready to connect to a peer"
+        is ConnectionState.Discovering -> "Looking for nearby devices…"
+        is ConnectionState.Connecting  -> "Connecting to ${state.deviceName}"
+        is ConnectionState.Connected   -> state.deviceName
+        is ConnectionState.Error       -> state.message
+        is ConnectionState.Disconnected-> "Lost link — attempting reconnect"
     }
 
     val isPulsing = state is ConnectionState.Discovering || state is ConnectionState.Connecting
-    
+
+    // Pulsing ring animation for active states
     val infiniteTransition = rememberInfiniteTransition(label = "StatusDotPulse")
-    val alphaAnim by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 1f,
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.5f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 800),
+            animation = tween(900, easing = EaseInOutSine),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "PulseScale"
+    )
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.6f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = EaseInOutSine),
             repeatMode = RepeatMode.Reverse
         ),
         label = "PulseAlpha"
     )
 
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = backgroundColor,
-        shape = RoundedCornerShape(12.dp)
+    // iOS-style grouped-list card
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(iOSGrayBg, RoundedCornerShape(14.dp))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+        // Status dot with optional pulsing halo
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.size(24.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(12.dp)
-                    .alpha(if (isPulsing) alphaAnim else 1f)
-                    .background(statusColor, CircleShape)
-            )
-            
-            Spacer(modifier = Modifier.width(16.dp))
-            
-            Column {
-                Text(
-                    text = "Connection Status",
-                    style = Typography.labelMedium,
-                    color = GreyText
-                )
-                Text(
-                    text = statusText,
-                    style = Typography.bodyLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = OnSurfaceColor
+            if (isPulsing) {
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .scale(pulseScale)
+                        .background(statusColor.copy(alpha = pulseAlpha), CircleShape)
                 )
             }
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .background(statusColor, CircleShape)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(14.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = statusLabel,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = iOSWhite
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = statusDetail,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Normal,
+                color = iOSSecondary,
+                maxLines = 1
+            )
+        }
+
+        // State badge pill
+        Box(
+            modifier = Modifier
+                .background(
+                    statusColor.copy(alpha = 0.15f),
+                    RoundedCornerShape(20.dp)
+                )
+                .padding(horizontal = 10.dp, vertical = 4.dp)
+        ) {
+            Text(
+                text = statusLabel.uppercase(),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = statusColor,
+                letterSpacing = 0.5.sp
+            )
         }
     }
 }

@@ -20,7 +20,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,7 +37,6 @@ fun ReceiverScreen(
     onNavigateBack: () -> Unit,
     viewModel: ReceiverViewModel = hiltViewModel()
 ) {
-    val context = LocalContext.current
     val connectionState by viewModel.connectionState.collectAsState()
     val audioStats by viewModel.audioStats.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
@@ -49,242 +47,353 @@ fun ReceiverScreen(
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        if (uri != null) {
-            viewModel.playLocalFile(uri)
-        }
+        if (uri != null) viewModel.playLocalFile(uri)
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Phone A — Receiver Mode", style = Typography.titleMedium) },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = OnSurfaceColor)
+                title = {
+                    Column {
+                        Text("Receiver", style = MaterialTheme.typography.titleMedium, color = iOSWhite)
+                        Text("Phone A — Master Device", fontSize = 12.sp, color = iOSSecondary)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBackground)
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = iOSBlue)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = iOSBlack)
             )
         },
-        containerColor = DarkBackground
+        containerColor = iOSBlack
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
                 .verticalScroll(scrollState)
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+                .padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 1. Connection Status
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // ── 1. Connection Status ──────────────────────────────────────────
             ConnectionStatusCard(state = connectionState)
 
-            // 2. Dual Audio Level Visualizer (Side-by-Side)
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = CardBackground),
-                shape = RoundedCornerShape(12.dp)
+            // ── 2. Earbud Channel Visualizer ──────────────────────────────────
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(iOSGrayBg, RoundedCornerShape(14.dp))
+                    .padding(16.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Earbud Output Channels",
-                        style = Typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = OnSurfaceColor
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        AudioLevelBar(
-                            level = audioStats.leftChannelLevel,
-                            label = "← Phone A (Left Earbud)",
-                            modifier = Modifier.weight(1f)
-                        )
-                        AudioLevelBar(
-                            level = audioStats.rightChannelLevel,
-                            label = "Phone B (Right Earbud) →",
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
+                ReceiverGroupHeader(text = "EARBUD OUTPUT CHANNELS")
+                Spacer(modifier = Modifier.height(14.dp))
+
+                AudioLevelBar(
+                    level = audioStats.leftChannelLevel,
+                    label = "Left  ◀  Phone A",
+                    activeColor = iOSBlue,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+                AudioLevelBar(
+                    level = audioStats.rightChannelLevel,
+                    label = "Right  ▶  Phone B",
+                    activeColor = iOSPurple,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
 
-            // 3. Local Audio Source Panel
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = CardBackground),
-                shape = RoundedCornerShape(12.dp)
+            // ── 3. Control Actions ────────────────────────────────────────────
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(iOSGrayBg, RoundedCornerShape(14.dp))
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Local Audio Source (Phone A)",
-                        style = Typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = OnSurfaceColor
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Use WebView Player", style = Typography.bodyMedium)
-                        Switch(
-                            checked = useWebView,
-                            onCheckedChange = { 
-                                useWebView = it
-                                if (!it) viewModel.stopLocalPlayback()
-                            }
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    if (useWebView) {
-                        AndroidView(
-                            factory = { ctx ->
-                                WebView(ctx).apply {
-                                    settings.javaScriptEnabled = true
-                                    settings.domStorageEnabled = true
-                                    settings.mediaPlaybackRequiresUserGesture = false
-                                    webViewClient = WebViewClient()
-                                    loadUrl("https://music.youtube.com")
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(260.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                        )
-                    } else {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Button(
-                                onClick = { filePickerLauncher.launch("audio/*") },
-                                colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text("Select Audio File", color = Color.Black, fontWeight = FontWeight.Bold)
-                            }
-                            if (isPlaying) {
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    Icon(Icons.Default.PlayArrow, contentDescription = "Playing", tint = SuccessGreen)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Playing local audio file...", style = Typography.bodyMedium, color = SuccessGreen)
-                                    Spacer(modifier = Modifier.width(16.dp))
-                                    IconButton(onClick = { viewModel.stopLocalPlayback() }) {
-                                        Icon(Icons.Default.Stop, contentDescription = "Stop", tint = ErrorRed)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 4. Control Buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = { viewModel.startReceiver() },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text("START RECEIVER", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                }
+                ReceiverGroupHeader(text = "CONTROLS")
+                Spacer(modifier = Modifier.height(2.dp))
 
                 val isConnected = connectionState is ConnectionState.Connected
+
+                // Start Receiver — primary full-width button
+                Button(
+                    onClick = { viewModel.startReceiver() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = iOSBlue),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        "Start Receiver",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = iOSWhite
+                    )
+                }
+
+                // Stream Remote — secondary full-width button
                 Button(
                     onClick = { viewModel.sendStartStreamCommand() },
-                    modifier = Modifier.weight(1f),
                     enabled = isConnected,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = PurpleAccent,
-                        disabledContainerColor = PurpleAccent.copy(alpha = 0.3f)
+                        containerColor = iOSPurple,
+                        disabledContainerColor = iOSPurple.copy(alpha = 0.25f)
                     ),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("STREAM REMOTE", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    Text(
+                        "Stream Remote Audio",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isConnected) iOSWhite else iOSWhite.copy(alpha = 0.35f)
+                    )
                 }
 
+                // Stop — destructive button
                 Button(
                     onClick = { viewModel.stopReceiver() },
-                    modifier = Modifier.weight(0.8f),
-                    colors = ButtonDefaults.buttonColors(containerColor = ErrorRed),
-                    shape = RoundedCornerShape(8.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = iOSRed),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("STOP", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    Text(
+                        "Stop",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = iOSWhite
+                    )
                 }
             }
 
-            // 5. Telemetry Stats Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = CardBackground),
-                shape = RoundedCornerShape(12.dp)
+            // ── 4. Local Audio Source ─────────────────────────────────────────
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(iOSGrayBg, RoundedCornerShape(14.dp))
+                    .padding(bottom = if (useWebView) 0.dp else 16.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Live Telemetry", style = Typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Divider(color = SurfaceColor, modifier = Modifier.padding(vertical = 8.dp))
+                ReceiverGroupHeader(
+                    text = "LOCAL AUDIO SOURCE",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                )
 
+                // Switch row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("YouTube Music", fontSize = 16.sp, color = iOSWhite)
+                        Text("Open web player in-app", fontSize = 13.sp, color = iOSSecondary)
+                    }
+                    Switch(
+                        checked = useWebView,
+                        onCheckedChange = {
+                            useWebView = it
+                            if (!it) viewModel.stopLocalPlayback()
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = iOSWhite,
+                            checkedTrackColor = iOSGreen,
+                            uncheckedThumbColor = iOSWhite,
+                            uncheckedTrackColor = iOSLightGrayBg
+                        )
+                    )
+                }
+
+                if (useWebView) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    AndroidView(
+                        factory = { ctx ->
+                            WebView(ctx).apply {
+                                settings.javaScriptEnabled = true
+                                settings.domStorageEnabled = true
+                                settings.mediaPlaybackRequiresUserGesture = false
+                                webViewClient = WebViewClient()
+                                loadUrl("https://music.youtube.com")
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(280.dp)
+                            .clip(
+                                RoundedCornerShape(
+                                    topStart = 0.dp, topEnd = 0.dp,
+                                    bottomStart = 14.dp, bottomEnd = 14.dp
+                                )
+                            )
+                    )
+                } else {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    // File picker section
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Button(
+                            onClick = { filePickerLauncher.launch("audio/*") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = iOSBlue),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Choose Audio File", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = iOSWhite)
+                        }
+
+                        if (isPlaying) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = "Playing", tint = iOSGreen, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Playing…", fontSize = 14.sp, color = iOSGreen)
+                                Spacer(modifier = Modifier.width(16.dp))
+                                IconButton(onClick = { viewModel.stopLocalPlayback() }, modifier = Modifier.size(32.dp)) {
+                                    Icon(Icons.Default.Stop, contentDescription = "Stop", tint = iOSRed, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── 5. Live Telemetry ─────────────────────────────────────────────
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(iOSGrayBg, RoundedCornerShape(14.dp))
+            ) {
+                ReceiverGroupHeader(
+                    text = "LIVE TELEMETRY",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                )
+
+                TelemetryRow(
+                    label = "Latency",
+                    value = "${audioStats.latencyMs} ms",
+                    valueColor = when {
+                        audioStats.latencyMs > 150 -> iOSRed
+                        audioStats.latencyMs > 80  -> iOSOrange
+                        else                       -> iOSGreen
+                    },
+                    isLast = false
+                )
+
+                // Buffer health with inline progress bar
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 13.dp)
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Latency", style = Typography.bodyMedium)
-                        Text("${audioStats.latencyMs} ms", style = Typography.labelLarge)
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Jitter Buffer Health", style = Typography.bodyMedium)
-                            Text("${audioStats.bufferHealth}%", style = Typography.labelLarge)
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        LinearProgressIndicator(
-                            progress = audioStats.bufferHealth / 100f,
-                            modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
-                            color = ElectricBlue,
-                            trackColor = SurfaceColor
+                        Text("Jitter Buffer", fontSize = 16.sp, color = iOSWhite)
+                        Text(
+                            "${audioStats.bufferHealth}%",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = when {
+                                audioStats.bufferHealth < 30 -> iOSRed
+                                audioStats.bufferHealth < 60 -> iOSOrange
+                                else                         -> iOSGreen
+                            }
                         )
                     }
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Packets Received", style = Typography.bodyMedium)
-                        Text("${audioStats.packetsReceived}", style = Typography.labelLarge)
-                    }
                     Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Packets Dropped", style = Typography.bodyMedium)
-                        Text("${audioStats.packetsDropped}", style = Typography.labelLarge, color = if (audioStats.packetsDropped > 0) ErrorRed else SuccessGreen)
-                    }
+                    LinearProgressIndicator(
+                        progress = { audioStats.bufferHealth / 100f },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(50)),
+                        color = iOSBlue,
+                        trackColor = iOSSeparator
+                    )
                 }
+
+                Box(modifier = Modifier.fillMaxWidth().padding(start = 16.dp).height(0.5.dp).background(iOSSeparator))
+
+                TelemetryRow(
+                    label = "Packets Received",
+                    value = "${audioStats.packetsReceived}",
+                    valueColor = iOSWhite,
+                    isLast = false
+                )
+
+                TelemetryRow(
+                    label = "Packets Dropped",
+                    value = "${audioStats.packetsDropped}",
+                    valueColor = if (audioStats.packetsDropped > 0) iOSRed else iOSGreen,
+                    isLast = true
+                )
             }
+
+            Spacer(modifier = Modifier.height(32.dp))
         }
+    }
+}
+
+@Composable
+private fun ReceiverGroupHeader(
+    text: String,
+    modifier: Modifier = Modifier.padding(horizontal = 0.dp, vertical = 0.dp)
+) {
+    Text(
+        text = text,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = iOSSecondary,
+        letterSpacing = 0.5.sp,
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun TelemetryRow(
+    label: String,
+    value: String,
+    valueColor: Color = iOSWhite,
+    isLast: Boolean = false
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 13.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, fontSize = 16.sp, color = iOSWhite)
+        Text(value, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = valueColor)
+    }
+    if (!isLast) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp)
+                .height(0.5.dp)
+                .background(iOSSeparator)
+        )
     }
 }
