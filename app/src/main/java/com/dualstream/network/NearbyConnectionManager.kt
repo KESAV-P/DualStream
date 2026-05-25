@@ -104,6 +104,11 @@ class NearbyConnectionManager @Inject constructor(
                     connectedEndpointId = endpointId
                     _connectionState.value = ConnectionState.Connected(endpointId)
                     
+                    // Stop advertising and discovery to release Bluetooth/Wi-Fi scanning resource
+                    connectionsClient.stopAdvertising()
+                    connectionsClient.stopDiscovery()
+                    Log.d("DualStream", "Stopped advertising and discovery on connection success")
+
                     // Send READY message containing device name
                     sendControlMessage(JSONObject().apply {
                         put("type", "READY")
