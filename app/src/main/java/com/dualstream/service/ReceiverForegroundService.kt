@@ -58,10 +58,17 @@ class ReceiverForegroundService : Service() {
 
     private var projectionIntent: Intent? = null
     private var projectionResultCode: Int = -1
+    private var useFallbackGainMakeup = false
+    private var hasSentHandshake = false
+    private var bytesReceivedWindow = 0L
+    private var windowStartTime = 0L
 
     companion object {
         private val _audioStats = MutableStateFlow(AudioStats())
         val audioStats: StateFlow<AudioStats> = _audioStats.asStateFlow()
+
+        private val _isRemoteAudioFlowing = MutableStateFlow(false)
+        val isRemoteAudioFlowing: StateFlow<Boolean> = _isRemoteAudioFlowing.asStateFlow()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -89,6 +96,7 @@ class ReceiverForegroundService : Service() {
         intent?.getParcelableExtra<Intent>("PROJECTION_INTENT")?.let { data ->
             projectionIntent = data
             projectionResultCode = intent.getIntExtra("PROJECTION_RESULT_CODE", -1)
+            useFallbackGainMakeup = intent.getBooleanExtra("USE_FALLBACK_GAIN_MAKEUP", false)
             
             if (projectionResultCode != -1) {
                 try {
@@ -113,19 +121,25 @@ class ReceiverForegroundService : Service() {
         
         Log.d("DualStream", "▶ Starting Receiver pipeline loops")
         jitterBuffer.clear()
+        hasSentHandshake = false
+        bytesReceivedWindow = 0L
+        windowStartTime = System.currentTimeMillis()
 
         // Initialize AudioCaptureManager
         if (mediaProjection != null) {
-            audioCaptureManager = AudioCaptureManager(this, mediaProjection!!)
+            audioCaptureManager = AudioCaptureManager(this, mediaProjection!!, useFallbackGainMakeup)
             
-            // Lower STREAM_MUSIC to 1 to mute system audio bleed
             val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            try {
-                val minVol = audioManager.getStreamMinVolume(AudioManager.STREAM_MUSIC)
-                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, maxOf(minVol, 1), 0)
-                Log.d("DualStream", "Set STREAM_MUSIC volume to ${maxOf(minVol, 1)}")
-            } catch (e: Exception) {
-                Log.e("DualStream", "Failed to lower STREAM_MUSIC volume", e)
+            if (useFallbackGainMakeup) {
+                try {
+                    val minVol = audioManager.getStreamMinVolume(AudioManager.STREAM_MUSIC)
+                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, maxOf(minVol, 1), 0)
+                    Log.d("DualStream", "Strategy B: Set STREAM_MUSIC volume to ${maxOf(minVol, 1)}")
+                } catch (e: Exception) {
+                    Log.e("DualStream", "Failed to lower STREAM_MUSIC volume", e)
+                }
+            } else {
+                Log.d("DualStream", "Strategy A: Alternate output active, leaving STREAM_MUSIC unchanged")
             }
             
             captureJob = serviceScope.launch {
@@ -137,6 +151,28 @@ class ReceiverForegroundService : Service() {
 
         streamReceiver.onAudioFrameReceived = { frameBytes ->
             jitterBuffer.write(frameBytes)
+            
+            if (!hasSentHandshake) {
+                hasSentHandshake = true
+                _isRemoteAudioFlowing.value = true
+                val connectedEndpointId = nearbyConnectionManager.connectedEndpointId
+                if (connectedEndpointId != null) {
+                    nearbyConnectionManager.sendControlMessage(
+                        connectedEndpointId,
+                        """{"type":"AUDIO_FLOW_CONFIRMED"}"""
+                    )
+                }
+            }
+
+            bytesReceivedWindow += frameBytes.size
+            val now = System.currentTimeMillis()
+            if (now - windowStartTime >= 1000) {
+                val realKbps = (bytesReceivedWindow * 8) / (now - windowStartTime)
+                _audioStats.value = _audioStats.value.copy(bitrateKbps = realKbps.toInt())
+                bytesReceivedWindow = 0
+                windowStartTime = now
+            }
+
             if (jitterBuffer.packetsReceived % 100 == 1L) {
                 Log.d("DualStream", "StreamReader: frame written (bufHealth=${jitterBuffer.bufferHealthPercent}%)")
             }
@@ -175,8 +211,7 @@ class ReceiverForegroundService : Service() {
                 _audioStats.value = _audioStats.value.copy(
                     bufferHealth = jitterBuffer.bufferHealthPercent,
                     packetsReceived = jitterBuffer.packetsReceived,
-                    packetsDropped = jitterBuffer.packetsDropped,
-                    bitrateKbps = 768
+                    packetsDropped = jitterBuffer.packetsDropped
                 )
                 yield()
             }
@@ -249,6 +284,7 @@ class ReceiverForegroundService : Service() {
         try { mediaProjection?.stop() } catch (e: Exception) {}
         mediaProjection = null
         audioCaptureManager = null
+        _isRemoteAudioFlowing.value = false
         
         dualAudioPlayer.release()
         jitterBuffer.clear()

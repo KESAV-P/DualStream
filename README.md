@@ -33,7 +33,7 @@ Phone B captures its system audio via `AudioPlaybackCapture` (MediaProjection) a
 - 📡 **Google Nearby Connections** — Wi-Fi P2P streaming, no internet required
 - 🎙️ **System-wide audio capture** — stream any app (Spotify, Chrome) using MediaProjection
 - 🎧 **Alarm channel mixing** — isolates mixed audio to the Alarm stream to prevent system stereo bleed
-- 🗜️ **Opus codec** — 64 kbps compressed audio via Android MediaCodec
+- 🗜️ **Raw PCM** — Uncompressed 16-bit 48kHz mono audio for maximum fidelity
 - 🔄 **Jitter buffer** — smooth playback with 15-frame adaptive packet smoothing
 - 📊 **Live telemetry** — real-time RTT latency (PING/PONG), buffer health, packet stats
 - 🔁 **Auto-reconnection** — automatically resumes after Wi-Fi interruption
@@ -49,13 +49,13 @@ Phone B captures its system audio via `AudioPlaybackCapture` (MediaProjection) a
 ┌─────────────────────────────────┐     Wi-Fi (Nearby Connections)    ┌──────────────────────────────────┐
 │        PHONE B (Sender)         │ ─────────────────────────────────> │       PHONE A (Receiver)          │
 │                                 │                                    │                                   │
-│  System Audio                   │    Opus-compressed PCM frames      │  System Audio                     │
-│      │                          │       (20ms @ 64kbps)             │      │                            │
+│  System Audio                   │    Uncompressed Raw PCM frames     │  System Audio                     │
+│      │                          │       (20ms @ 768kbps)            │      │                            │
 │  AudioPlaybackCapture           │                                    │  AudioPlaybackCapture             │
 │  (MediaProjection)              │                                    │  (MediaProjection)                │
 │      │                          │                                    │      │                            │
-│  OpusCodec (encode)             │                                    │  LEFT CH  ◄──  Local PCM          │
-│      │                          │                                    │  RIGHT CH ◄──  Decoded Remote     │
+│  Raw PCM Stream                 │                                    │  LEFT CH  ◄──  Local PCM          │
+│      │                          │                                    │  RIGHT CH ◄──  Remote PCM         │
 │  StreamSender ──────────────────┤                                    │                                   │
 └─────────────────────────────────┘                                    │      AudioMixer (stereo merge)    │
                                                                        │      AudioTrack (Alarm Stream)    │
@@ -70,7 +70,7 @@ Phone B captures its system audio via `AudioPlaybackCapture` (MediaProjection) a
 | UI | Jetpack Compose + Material3 |
 | Architecture | MVVM + Hilt (DI) |
 | Networking | Google Nearby Connections API |
-| Audio Encoding | Android MediaCodec (Opus) |
+| Audio Encoding | Uncompressed 16-bit PCM |
 | Concurrency | Kotlin Coroutines + Flow |
 | Services | Android Foreground Services |
 | Build | Gradle 9.1.0 + AGP 9.0.1 |
@@ -198,7 +198,7 @@ android.enableR8.fullMode=true    # Enable full R8 optimization for release
 2. Grant **Record Audio** and **Nearby Wi-Fi** permissions
 3. Tap **START STREAMING** → grant the MediaProjection (screen capture) permission
 4. Phone B will automatically discover and connect to Phone A
-5. The system audio from Phone B is captured, compressed (Opus 64kbps), and streamed to Phone A.
+5. The system audio from Phone B is captured and streamed to Phone A.
 
 > **Note on DRM:** Apps like Spotify, Apple Music, and Netflix block system audio capture using DRM flags. When capturing from these apps, the system outputs silent frames. DualStream will detect this and display a warning. Use a browser (like Chrome) or apps that don't enforce DRM for audio streaming.
 
@@ -235,7 +235,7 @@ leftChannelBufferQueue (LinkedBlockingQueue)
     │                                          │
 JitterBuffer (15-frame LinkedBlockingDeque)   AudioMixer.mix(left, right)
     │                                          │
-    ├── RIGHT channel PCM (decoded Opus) ──────┘
+    ├── RIGHT channel PCM (Remote Network) ────┘
     │
     ▼
 DualAudioPlayer (Alarm Stream) → Bluetooth headset
@@ -248,8 +248,8 @@ DualAudioPlayer (Alarm Stream) → Bluetooth headset
 │                  Audio Frame Packet                   │
 ├──────────────┬───────────────────────────────────────┤
 │  2 bytes     │  N bytes                              │
-│  Frame size  │  Opus-encoded PCM payload             │
-│  (big-endian)│  (20ms @ 44.1kHz stereo, 64kbps)     │
+│  Frame size  │  Raw 16-bit PCM payload               │
+│  (big-endian)│  (20ms @ 48kHz mono, 768kbps)        │
 └──────────────┴───────────────────────────────────────┘
 ```
 

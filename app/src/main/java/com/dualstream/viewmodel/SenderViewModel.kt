@@ -30,6 +30,12 @@ class SenderViewModel @Inject constructor(
     val audioLevel: StateFlow<Float> = SenderForegroundService.audioLevel
 
     val isSilenceDetected: StateFlow<Boolean> = SenderForegroundService.isSilenceDetected
+    
+    val isRemoteAudioFlowing: StateFlow<Boolean> = SenderForegroundService.isRemoteAudioFlowing
+
+    fun isAlternateOutputAvailable(): Boolean {
+        return com.dualstream.audio.AudioCaptureManager.isAlternateOutputAvailable(context)
+    }
 
     fun startSender() {
         // Discovery is started by the service on start.
@@ -43,10 +49,11 @@ class SenderViewModel @Inject constructor(
         nearbyConnectionManager.disconnect()
     }
 
-    fun onMediaProjectionResult(resultCode: Int, data: Intent) {
+    fun onMediaProjectionResult(resultCode: Int, data: Intent, useFallbackGainMakeup: Boolean = false) {
         val intent = Intent(context, SenderForegroundService::class.java).apply {
             putExtra("PROJECTION_RESULT_CODE", resultCode)
             putExtra("PROJECTION_INTENT", data)
+            putExtra("USE_FALLBACK_GAIN_MAKEUP", useFallbackGainMakeup)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent)

@@ -34,8 +34,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.dualstream.model.ConnectionState
 import com.dualstream.ui.components.AudioLevelBar
 import com.dualstream.ui.components.ConnectionStatusCard
-import com.dualstream.ui.theme.*
 import com.dualstream.viewmodel.SenderViewModel
+import com.dualstream.ui.theme.*
+import com.dualstream.BuildConfig
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,7 +49,12 @@ fun SenderScreen(
     val isStreaming by viewModel.isStreaming.collectAsState()
     val audioLevel by viewModel.audioLevel.collectAsState()
     val isSilenceDetected by viewModel.isSilenceDetected.collectAsState()
+    val isRemoteAudioFlowing by viewModel.isRemoteAudioFlowing.collectAsState()
     val scrollState = rememberScrollState()
+
+    var showFallbackDialog by remember { mutableStateOf(false) }
+    var pendingProjectionData by remember { mutableStateOf<android.content.Intent?>(null) }
+    var pendingProjectionCode by remember { mutableStateOf(-1) }
 
     val mediaProjectionManager = remember {
         context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -57,7 +63,13 @@ fun SenderScreen(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            viewModel.onMediaProjectionResult(result.resultCode, result.data!!)
+            if (viewModel.isAlternateOutputAvailable()) {
+                viewModel.onMediaProjectionResult(result.resultCode, result.data!!, useFallbackGainMakeup = false)
+            } else {
+                pendingProjectionCode = result.resultCode
+                pendingProjectionData = result.data
+                showFallbackDialog = true
+            }
         }
     }
 
@@ -93,6 +105,27 @@ fun SenderScreen(
         },
         containerColor = iOSBlack
     ) { paddingValues ->
+        if (showFallbackDialog) {
+            AlertDialog(
+                onDismissRequest = { showFallbackDialog = false },
+                title = { Text("Audio Leakage Warning") },
+                text = { Text("No wired or Bluetooth headset detected on this device. If we proceed, the audio will bleed through the phone's speaker. We can use a 'Gain Make-up' fallback that minimizes the speaker volume while digitally restoring the stream volume, but it may cause slight clipping. Proceed?") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showFallbackDialog = false
+                        viewModel.onMediaProjectionResult(pendingProjectionCode, pendingProjectionData!!, useFallbackGainMakeup = true)
+                    }) {
+                        Text("Use Fallback")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showFallbackDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -105,7 +138,7 @@ fun SenderScreen(
             Spacer(modifier = Modifier.height(4.dp))
 
             // ── 1. Connection Status ──────────────────────────────────────────
-            ConnectionStatusCard(state = connectionState)
+            ConnectionStatusCard(state = connectionState, isRemoteAudioFlowing = isRemoteAudioFlowing)
 
             if (isStreaming && isSilenceDetected) {
                 Card(
@@ -202,6 +235,18 @@ fun SenderScreen(
                     isFirst = false,
                     isLast = true
                 )
+            }
+
+            if (BuildConfig.DEBUG && isStreaming) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(iOSGrayBg, RoundedCornerShape(14.dp))
+                ) {
+                    IosGroupHeader(text = "DEBUG OVERLAY")
+                    IosStatRow(label = "Strategy", value = if (viewModel.isAlternateOutputAvailable()) "A (Native)" else "B (Gain Makeup)")
+                    IosStatRow(label = "Remote Flow", value = isRemoteAudioFlowing.toString(), isLast = true)
+                }
             }
 
             // ── 5. Permissions ────────────────────────────────────────────────

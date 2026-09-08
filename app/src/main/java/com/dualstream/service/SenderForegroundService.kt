@@ -46,6 +46,7 @@ class SenderForegroundService : Service() {
     private var audioFocusRequest: android.media.AudioFocusRequest? = null
     private var projectionIntent: Intent? = null
     private var projectionResultCode: Int = -1
+    private var useFallbackGainMakeup = false
 
     companion object {
         private val _audioLevel = MutableStateFlow(0f)
@@ -56,6 +57,9 @@ class SenderForegroundService : Service() {
 
         private val _isSilenceDetected = MutableStateFlow(false)
         val isSilenceDetected: StateFlow<Boolean> = _isSilenceDetected.asStateFlow()
+
+        private val _isRemoteAudioFlowing = MutableStateFlow(false)
+        val isRemoteAudioFlowing: StateFlow<Boolean> = _isRemoteAudioFlowing.asStateFlow()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -85,6 +89,7 @@ class SenderForegroundService : Service() {
             projectionIntent = data
             val resultCode = intent.getIntExtra("PROJECTION_RESULT_CODE", -1)
             projectionResultCode = resultCode
+            useFallbackGainMakeup = intent.getBooleanExtra("USE_FALLBACK_GAIN_MAKEUP", false)
             
             if (resultCode != -1) {
                 try {
@@ -137,6 +142,10 @@ class SenderForegroundService : Service() {
                 when (json.optString("type")) {
                     "STOP_STREAM" -> {
                         stopStreamingPipeline()
+                    }
+                    "AUDIO_FLOW_CONFIRMED" -> {
+                        Log.d("DualStream", "Received AUDIO_FLOW_CONFIRMED")
+                        _isRemoteAudioFlowing.value = true
                     }
                 }
             }
@@ -217,21 +226,19 @@ class SenderForegroundService : Service() {
             return
         }
         
-        audioCaptureManager = AudioCaptureManager(this, proj)
+        audioCaptureManager = AudioCaptureManager(this, proj, useFallbackGainMakeup)
         
-        // *** CRITICAL FIX: DO NOT MUTE STREAM_MUSIC ***
-        // adjustStreamVolume(STREAM_MUSIC, ADJUST_MUTE) silences the audio source,
-        // which causes AudioPlaybackCaptureConfiguration to receive all-zero frames.
-        // Instead, set volume to minimum (1) so the capture stream stays alive
-        // while being nearly inaudible from the phone speaker.
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        try {
-            val minVol = audioManager.getStreamMinVolume(AudioManager.STREAM_MUSIC)
-            // Set to minimum non-zero volume (keeps capture alive)
-            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, maxOf(minVol, 1), 0)
-            Log.d("DualStream", "Set STREAM_MUSIC volume to ${maxOf(minVol, 1)} (min=$minVol)")
-        } catch (e: Exception) {
-            Log.e("DualStream", "Failed to lower STREAM_MUSIC volume", e)
+        if (useFallbackGainMakeup) {
+            try {
+                val minVol = audioManager.getStreamMinVolume(AudioManager.STREAM_MUSIC)
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, maxOf(minVol, 1), 0)
+                Log.d("DualStream", "Strategy B: Set STREAM_MUSIC volume to ${maxOf(minVol, 1)}")
+            } catch (e: Exception) {
+                Log.e("DualStream", "Failed to lower STREAM_MUSIC volume", e)
+            }
+        } else {
+            Log.d("DualStream", "Strategy A: Alternate output active, leaving STREAM_MUSIC unchanged")
         }
         
         _isStreaming.value = true
@@ -284,6 +291,7 @@ class SenderForegroundService : Service() {
             streamSender.stopSending()
         }
         _isStreaming.value = false
+        _isRemoteAudioFlowing.value = false
         _audioLevel.value = 0f
         _isSilenceDetected.value = false
         try {

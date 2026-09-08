@@ -7,6 +7,8 @@ import com.google.android.gms.nearby.connection.Payload
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import java.io.OutputStream
@@ -37,17 +39,33 @@ class StreamSender @Inject constructor(
         
         sendJob = scope.launch(Dispatchers.IO) {
             var framesSent = 0L
+            val frameChannel = Channel<ByteArray>(capacity = 25, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+            
+            // Writer coroutine
+            val writerJob = launch {
+                for (frame in frameChannel) {
+                    try {
+                        outputStream?.write(frame)
+                    } catch (e: Exception) {
+                        Log.e("DualStream", "StreamSender write error", e)
+                        break
+                    }
+                }
+            }
+
             try {
                 monoFrameFlow.collect { frame ->
-                    outputStream?.write(frame)
+                    frameChannel.trySend(frame)
                     framesSent++
                     if (framesSent % 100 == 1L) {
-                        Log.d("DualStream", "StreamSender: frame #$framesSent sent via STREAM (${frame.size} bytes)")
+                        Log.d("DualStream", "StreamSender: frame #$framesSent queued for STREAM (${frame.size} bytes)")
                     }
                 }
             } catch (e: Exception) {
-                Log.e("DualStream", "StreamSender error after $framesSent frames", e)
+                Log.e("DualStream", "StreamSender collect error after $framesSent frames", e)
             } finally {
+                frameChannel.close()
+                writerJob.cancel()
                 Log.d("DualStream", "StreamSender send loop ended — total frames: $framesSent")
                 stopSending()
             }

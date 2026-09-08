@@ -60,6 +60,12 @@ class ReceiverViewModel @Inject constructor(
     private val _isRemoteSilenceDetected = MutableStateFlow(false)
     val isRemoteSilenceDetected: StateFlow<Boolean> = _isRemoteSilenceDetected.asStateFlow()
 
+    val isRemoteAudioFlowing: StateFlow<Boolean> = ReceiverForegroundService.isRemoteAudioFlowing
+
+    fun isAlternateOutputAvailable(): Boolean {
+        return com.dualstream.audio.AudioCaptureManager.isAlternateOutputAvailable(context)
+    }
+
     private val levelReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val channel = intent.getStringExtra("channel")
@@ -86,11 +92,12 @@ class ReceiverViewModel @Inject constructor(
         }
     }
 
-    fun onMediaProjectionResult(resultCode: Int, data: Intent) {
+    fun onMediaProjectionResult(resultCode: Int, data: Intent, useFallbackGainMakeup: Boolean = false) {
         Log.d("DualStream", "ReceiverViewModel onMediaProjectionResult() triggered")
         val intent = Intent(context, ReceiverForegroundService::class.java).apply {
             putExtra("PROJECTION_INTENT", data)
             putExtra("PROJECTION_RESULT_CODE", resultCode)
+            putExtra("USE_FALLBACK_GAIN_MAKEUP", useFallbackGainMakeup)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent)

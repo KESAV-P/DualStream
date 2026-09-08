@@ -20,6 +20,7 @@ import com.dualstream.ui.theme.*
 @Composable
 fun ConnectionStatusCard(
     state: ConnectionState,
+    isRemoteAudioFlowing: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val statusColor = when (state) {
@@ -35,7 +36,7 @@ fun ConnectionStatusCard(
         is ConnectionState.Idle        -> "Not Connected"
         is ConnectionState.Discovering -> "Scanning…"
         is ConnectionState.Connecting  -> "Connecting"
-        is ConnectionState.Connected   -> "Connected"
+        is ConnectionState.Connected   -> if (isRemoteAudioFlowing) "Connected (Live)" else "Connected (Handshake)"
         is ConnectionState.Error       -> "Error"
         is ConnectionState.Disconnected-> "Reconnecting"
     }
@@ -44,7 +45,7 @@ fun ConnectionStatusCard(
         is ConnectionState.Idle        -> "Ready to connect to a peer"
         is ConnectionState.Discovering -> "Looking for nearby devices…"
         is ConnectionState.Connecting  -> "Connecting to ${state.deviceName}"
-        is ConnectionState.Connected   -> state.deviceName
+        is ConnectionState.Connected   -> if (isRemoteAudioFlowing) "Audio flowing with ${state.deviceName}" else "Waiting for audio flow..."
         is ConnectionState.Error       -> state.message
         is ConnectionState.Disconnected-> "Lost link — attempting reconnect"
     }

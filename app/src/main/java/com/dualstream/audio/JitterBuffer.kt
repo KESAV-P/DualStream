@@ -14,6 +14,8 @@ class JitterBuffer @Inject constructor() {
 
     private val _packetsReceived = AtomicLong(0L)
     private val _packetsDropped = AtomicLong(0L)
+    
+    private var highBufferFrames = 0L
 
     val packetsReceived: Long
         get() = _packetsReceived.get()
@@ -33,7 +35,31 @@ class JitterBuffer @Inject constructor() {
     }
 
     // READ side — called by mixing thread (non-blocking)
-    fun poll(): ByteArray? = queue.pollFirst()
+    fun poll(): ByteArray? {
+        val frame = queue.pollFirst()
+        if (frame == null) {
+            // Log starvation distinctly from general debugs, but rate limit it
+            if (_packetsReceived.get() > 0 && Math.random() < 0.05) {
+                android.util.Log.w("DualStream", "JitterBuffer STARVATION: underrun detected")
+            }
+            return null
+        }
+        
+        // Adaptive jitter buffer: if constantly full, drop a frame to reduce latency
+        if (bufferHealthPercent > 80) {
+            highBufferFrames++
+            if (highBufferFrames > 100) { // >2 seconds of high buffer
+                android.util.Log.w("DualStream", "JitterBuffer ADAPTIVE DROP: reducing latency")
+                queue.pollFirst() // drop one extra frame
+                _packetsDropped.incrementAndGet()
+                highBufferFrames = 0L
+            }
+        } else {
+            highBufferFrames = 0L
+        }
+        
+        return frame
+    }
 
     // Buffer health as percentage (for UI display)
     val bufferHealthPercent: Int

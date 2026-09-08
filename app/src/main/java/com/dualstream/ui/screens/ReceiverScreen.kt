@@ -31,6 +31,7 @@ import com.dualstream.ui.components.AudioLevelBar
 import com.dualstream.ui.components.ConnectionStatusCard
 import com.dualstream.ui.theme.*
 import com.dualstream.viewmodel.ReceiverViewModel
+import com.dualstream.BuildConfig
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,8 +45,13 @@ fun ReceiverScreen(
     val isPlaying by viewModel.isPlaying.collectAsState()
     val isCallActive by viewModel.isRemoteCallActive.collectAsState()
     val isSilenceDetected by viewModel.isRemoteSilenceDetected.collectAsState()
+    val isRemoteAudioFlowing by viewModel.isRemoteAudioFlowing.collectAsState()
 
     val scrollState = rememberScrollState()
+
+    var showFallbackDialog by remember { mutableStateOf(false) }
+    var pendingProjectionData by remember { mutableStateOf<android.content.Intent?>(null) }
+    var pendingProjectionCode by remember { mutableStateOf(-1) }
 
     val mediaProjectionManager = remember {
         context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -54,7 +60,13 @@ fun ReceiverScreen(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            viewModel.onMediaProjectionResult(result.resultCode, result.data!!)
+            if (viewModel.isAlternateOutputAvailable()) {
+                viewModel.onMediaProjectionResult(result.resultCode, result.data!!, useFallbackGainMakeup = false)
+            } else {
+                pendingProjectionCode = result.resultCode
+                pendingProjectionData = result.data
+                showFallbackDialog = true
+            }
         }
     }
 
@@ -77,6 +89,27 @@ fun ReceiverScreen(
         },
         containerColor = iOSBlack
     ) { paddingValues ->
+        if (showFallbackDialog) {
+            AlertDialog(
+                onDismissRequest = { showFallbackDialog = false },
+                title = { Text("Audio Leakage Warning") },
+                text = { Text("No wired or Bluetooth headset detected on this device. If we proceed, the audio will bleed through the phone's speaker. We can use a 'Gain Make-up' fallback that minimizes the speaker volume while digitally restoring the stream volume, but it may cause slight clipping. Proceed?") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showFallbackDialog = false
+                        viewModel.onMediaProjectionResult(pendingProjectionCode, pendingProjectionData!!, useFallbackGainMakeup = true)
+                    }) {
+                        Text("Use Fallback")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showFallbackDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -151,7 +184,7 @@ fun ReceiverScreen(
             }
 
             // ── 1. Connection Status ──────────────────────────────────────────
-            ConnectionStatusCard(state = connectionState)
+            ConnectionStatusCard(state = connectionState, isRemoteAudioFlowing = isRemoteAudioFlowing)
 
             // ── 2. Earbud Channel Visualizer ──────────────────────────────────
             Column(
@@ -265,7 +298,21 @@ fun ReceiverScreen(
                 }
             }
 
-
+            if (BuildConfig.DEBUG && isPlaying) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(iOSGrayBg, RoundedCornerShape(14.dp))
+                ) {
+                    ReceiverGroupHeader(
+                        text = "DEBUG OVERLAY",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                    )
+                    TelemetryRow(label = "Strategy", value = if (viewModel.isAlternateOutputAvailable()) "A (Native)" else "B (Gain Makeup)")
+                    TelemetryRow(label = "Remote Flow", value = isRemoteAudioFlowing.toString())
+                    TelemetryRow(label = "Real Bitrate", value = "${audioStats.bitrateKbps} Kbps", isLast = true)
+                }
+            }
 
             // ── 5. Live Telemetry ─────────────────────────────────────────────
             Column(
