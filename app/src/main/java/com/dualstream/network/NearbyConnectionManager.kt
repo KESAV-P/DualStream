@@ -52,6 +52,7 @@ class NearbyConnectionManager @Inject constructor(
     private val maxReconnectAttempts = 5
     private var lastConnectedEndpointId: String? = null
     private var currentMode: AppMode? = null
+    private val endpointNames = mutableMapOf<String, String>()
 
     init {
         streamReceiver.onControlMessageReceived = { jsonString ->
@@ -77,6 +78,7 @@ class NearbyConnectionManager @Inject constructor(
     private val connectionLifecycleCallback = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(endpointId: String, connectionInfo: ConnectionInfo) {
             Log.d("DualStream", "Connection initiated with $endpointId (${connectionInfo.endpointName})")
+            endpointNames[endpointId] = connectionInfo.endpointName
             _connectionState.value = ConnectionState.Connecting(connectionInfo.endpointName)
             acceptConnection(endpointId)
         }
@@ -87,7 +89,8 @@ class NearbyConnectionManager @Inject constructor(
                 connectedEndpointId = endpointId
                 reconnectAttempts = 0
                 lastConnectedEndpointId = endpointId
-                _connectionState.value = ConnectionState.Connected(endpointId)
+                val deviceName = endpointNames[endpointId] ?: endpointId
+                _connectionState.value = ConnectionState.Connected(deviceName)
                 
                 // Stop advertising and discovery to release Bluetooth/Wi-Fi scanning resource
                 connectionsClient.stopAdvertising()

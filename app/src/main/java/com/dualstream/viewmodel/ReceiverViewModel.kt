@@ -11,7 +11,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
-import com.dualstream.audio.LocalAudioCapture
+
 import com.dualstream.model.AudioStats
 import com.dualstream.model.ConnectionState
 import com.dualstream.network.NearbyConnectionManager
@@ -30,7 +30,6 @@ import javax.inject.Inject
 @HiltViewModel
 class ReceiverViewModel @Inject constructor(
     private val nearbyConnectionManager: NearbyConnectionManager,
-    val localAudioCapture: LocalAudioCapture,
     application: Application
 ) : AndroidViewModel(application) {
 
@@ -87,9 +86,12 @@ class ReceiverViewModel @Inject constructor(
         }
     }
 
-    fun startReceiver() {
-        Log.d("DualStream", "ReceiverViewModel startReceiver() triggered")
-        val intent = Intent(context, ReceiverForegroundService::class.java)
+    fun onMediaProjectionResult(resultCode: Int, data: Intent) {
+        Log.d("DualStream", "ReceiverViewModel onMediaProjectionResult() triggered")
+        val intent = Intent(context, ReceiverForegroundService::class.java).apply {
+            putExtra("PROJECTION_INTENT", data)
+            putExtra("PROJECTION_RESULT_CODE", resultCode)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent)
         } else {
@@ -115,17 +117,6 @@ class ReceiverViewModel @Inject constructor(
         nearbyConnectionManager.sendControlMessage(json)
     }
 
-    fun playLocalUrl(url: String) {
-        localAudioCapture.playFromUrl(url)
-    }
-
-    fun playLocalUri(uri: Uri) {
-        localAudioCapture.playFromUri(uri)
-    }
-
-    fun stopLocalAudio() {
-        localAudioCapture.stop()
-    }
     override fun onCleared() {
         super.onCleared()
         LocalBroadcastManager.getInstance(context).unregisterReceiver(levelReceiver)

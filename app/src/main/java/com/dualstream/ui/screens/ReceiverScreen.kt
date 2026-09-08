@@ -1,5 +1,8 @@
 package com.dualstream.ui.screens
 
+import android.app.Activity
+import android.content.Context
+import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -44,12 +47,14 @@ fun ReceiverScreen(
 
     val scrollState = rememberScrollState()
 
-    var urlText by remember { mutableStateOf("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3") }
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            viewModel.playLocalUri(uri)
+    val mediaProjectionManager = remember {
+        context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+    }
+    val captureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+            viewModel.onMediaProjectionResult(result.resultCode, result.data!!)
         }
     }
 
@@ -188,7 +193,10 @@ fun ReceiverScreen(
 
                 // Start Receiver — primary full-width button
                 Button(
-                    onClick = { viewModel.startReceiver() },
+                    onClick = {
+                        val intent = mediaProjectionManager.createScreenCaptureIntent()
+                        captureLauncher.launch(intent)
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp),
@@ -257,77 +265,7 @@ fun ReceiverScreen(
                 }
             }
 
-            // ── 4. Local Audio Source ─────────────────────────────────────────
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(iOSGrayBg, RoundedCornerShape(14.dp))
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                ReceiverGroupHeader(text = "LOCAL AUDIO SOURCE")
-                
-                Text(
-                    text = "Stream local audio directly to the right earbud.",
-                    fontSize = 13.sp,
-                    color = iOSSecondary
-                )
 
-                OutlinedTextField(
-                    value = urlText,
-                    onValueChange = { urlText = it },
-                    label = { Text("Stream URL") },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = iOSBlue,
-                        unfocusedBorderColor = iOSSeparator,
-                        focusedLabelColor = iOSBlue,
-                        unfocusedLabelColor = iOSSecondary,
-                        focusedTextColor = iOSWhite,
-                        unfocusedTextColor = iOSWhite
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp)
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Button(
-                        onClick = { viewModel.playLocalUrl(urlText) },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = iOSBlue),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text("Play URL", color = iOSWhite)
-                    }
-                    Button(
-                        onClick = { viewModel.stopLocalAudio() },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = iOSRed),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text("Stop Player", color = iOSWhite)
-                    }
-                }
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(0.5.dp)
-                        .background(iOSSeparator)
-                )
-
-                Button(
-                    onClick = { filePickerLauncher.launch("audio/*") },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = iOSLightGrayBg),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text("Select Local Audio File", color = iOSBlue)
-                }
-            }
 
             // ── 5. Live Telemetry ─────────────────────────────────────────────
             Column(

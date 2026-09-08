@@ -97,8 +97,8 @@ class DualAudioPlayer @Inject constructor() {
         Log.d(TAG, "Building mixed track — buffer: $bufferSize bytes")
 
         val audioAttributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_MEDIA)
-            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_NONE)
             .let { builder ->
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S_V2) {
