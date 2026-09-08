@@ -20,10 +20,10 @@ DualStream creates a **peer-to-peer Wi-Fi audio bridge** between two phones:
 
 | Channel | Source | Output |
 |---------|--------|--------|
-| **LEFT earbud** | Phone A (Receiver) — local audio | Direct local playback |
-| **RIGHT earbud** | Phone B (Sender) — streamed audio | Received over Wi-Fi |
+| **LEFT earbud** | Phone A (Receiver) — system audio | Mixed locally on Phone A |
+| **RIGHT earbud** | Phone B (Sender) — system audio | Received over Wi-Fi |
 
-Phone B captures its system audio and streams it over local Wi-Fi to Phone A. Phone A acts as a **master mixer** — it combines its own audio into the LEFT channel and Phone B's incoming stream into the RIGHT channel, then plays the stereo mix through the single Bluetooth earbud connection with **zero channel bleed**.
+Phone B captures its system audio via `AudioPlaybackCapture` (MediaProjection) and streams it over local Wi-Fi to Phone A. Phone A also captures its own system audio. Phone A acts as a **master mixer** — it combines its own audio into the LEFT channel and Phone B's incoming stream into the RIGHT channel. To prevent native stereo bleeding, Phone A drops its media volume to 1 and outputs the final mixed stereo stream over the **Alarm** volume channel directly into the Bluetooth earbuds.
 
 ---
 
@@ -31,12 +31,12 @@ Phone B captures its system audio and streams it over local Wi-Fi to Phone A. Ph
 
 - 🎵 **Stereo channel isolation** — complete left/right separation with no audio bleed
 - 📡 **Google Nearby Connections** — Wi-Fi P2P streaming, no internet required
+- 🎙️ **System-wide audio capture** — stream any app (Spotify, Chrome) using MediaProjection
+- 🎧 **Alarm channel mixing** — isolates mixed audio to the Alarm stream to prevent system stereo bleed
 - 🗜️ **Opus codec** — 64 kbps compressed audio via Android MediaCodec
 - 🔄 **Jitter buffer** — smooth playback with 15-frame adaptive packet smoothing
 - 📊 **Live telemetry** — real-time RTT latency (PING/PONG), buffer health, packet stats
 - 🔁 **Auto-reconnection** — automatically resumes after Wi-Fi interruption
-- 🎬 **WebView media player** — built-in YouTube Music / streaming service player
-- 📂 **Local file playback** — pick any local audio file via system file picker
 - 🛡️ **DRM warning system** — detects DRM-enforced silence and notifies users
 - 🔋 **Foreground services** — wakelock-backed services ensure uninterrupted streaming
 - 🎨 **Dark glassmorphism UI** — premium dark-mode Jetpack Compose interface
@@ -45,19 +45,21 @@ Phone B captures its system audio and streams it over local Wi-Fi to Phone A. Ph
 
 ## 🏗️ Architecture
 
-```
+```text
 ┌─────────────────────────────────┐     Wi-Fi (Nearby Connections)    ┌──────────────────────────────────┐
 │        PHONE B (Sender)         │ ─────────────────────────────────> │       PHONE A (Receiver)          │
 │                                 │                                    │                                   │
-│  System Audio                   │    Opus-compressed PCM frames      │  LEFT CH  ◄──  Local ExoPlayer   │
-│      │                          │       (20ms @ 64kbps)             │                                   │
-│  AudioPlaybackCapture           │                                    │  RIGHT CH ◄──  Decoded Remote    │
-│  (MediaProjection)              │                                    │                                   │
-│      │                          │                                    │      AudioMixer (stereo merge)    │
-│  OpusCodec (encode)             │                                    │      AudioTrack (BT output)       │
-│      │                          │                                    └──────────────────────────────────┘
-│  StreamSender ──────────────────┤
-└─────────────────────────────────┘
+│  System Audio                   │    Opus-compressed PCM frames      │  System Audio                     │
+│      │                          │       (20ms @ 64kbps)             │      │                            │
+│  AudioPlaybackCapture           │                                    │  AudioPlaybackCapture             │
+│  (MediaProjection)              │                                    │  (MediaProjection)                │
+│      │                          │                                    │      │                            │
+│  OpusCodec (encode)             │                                    │  LEFT CH  ◄──  Local PCM          │
+│      │                          │                                    │  RIGHT CH ◄──  Decoded Remote     │
+│  StreamSender ──────────────────┤                                    │                                   │
+└─────────────────────────────────┘                                    │      AudioMixer (stereo merge)    │
+                                                                       │      AudioTrack (Alarm Stream)    │
+                                                                       └──────────────────────────────────┘
 ```
 
 ### Tech Stack
@@ -69,7 +71,6 @@ Phone B captures its system audio and streams it over local Wi-Fi to Phone A. Ph
 | Architecture | MVVM + Hilt (DI) |
 | Networking | Google Nearby Connections API |
 | Audio Encoding | Android MediaCodec (Opus) |
-| Local Playback | Media3 (ExoPlayer 1.3.1) |
 | Concurrency | Kotlin Coroutines + Flow |
 | Services | Android Foreground Services |
 | Build | Gradle 9.1.0 + AGP 9.0.1 |
@@ -78,7 +79,7 @@ Phone B captures its system audio and streams it over local Wi-Fi to Phone A. Ph
 
 ## 📁 Project Structure
 
-```
+```text
 app/src/main/java/com/dualstream/
 ├── audio/
 │   ├── AudioConstants.kt           # Sample rate, frame size, bit depth constants
@@ -86,7 +87,7 @@ app/src/main/java/com/dualstream/
 │   ├── JitterBuffer.kt             # Thread-safe 15-frame adaptive jitter buffer
 │   ├── OpusCodec.kt                # MediaCodec Opus encoder/decoder
 │   ├── AudioCaptureManager.kt      # MediaProjection-based system audio capture
-│   └── LocalAudioProcessor.kt     # ExoPlayer AudioProcessor for PCM interception
+│   └── DualAudioPlayer.kt          # Alarm stream audio player for the mixed output
 │
 ├── network/
 │   ├── NearbyConnectionManager.kt  # Google Nearby Connections manager
@@ -95,7 +96,7 @@ app/src/main/java/com/dualstream/
 │
 ├── service/
 │   ├── SenderForegroundService.kt  # Phone B: capture → encode → stream
-│   ├── ReceiverForegroundService.kt# Phone A: receive → decode → mix → play
+│   ├── ReceiverForegroundService.kt# Phone A: capture → receive → decode → mix → play
 │   └── StopActionReceiver.kt       # Notification stop action broadcast receiver
 │
 ├── viewmodel/
@@ -186,19 +187,20 @@ android.enableR8.fullMode=true    # Enable full R8 optimization for release
 ### Phone A — Receiver Mode
 1. Open DualStream → tap **"I am the Receiver (Phone A)"**
 2. Connect your Bluetooth earbuds to Phone A
-3. Tap **START RECEIVER** — the app begins advertising over Nearby Connections
-4. Select your local audio source:
-   - **WebView Player** (default) — browse to YouTube Music or any streaming service
-   - **Local File** — pick an audio file from your device
-5. Once Phone B connects, tap **STREAM REMOTE** to request Phone B to start sending
-6. Audio will be mixed: your local audio → **LEFT earbud**, Phone B's audio → **RIGHT earbud**
+3. Tap **Start Sender** — the app will request screen capture permission (MediaProjection) to capture system audio.
+4. Phone A begins advertising over Nearby Connections and lowers media volume to 1 to prevent native playback bleed.
+5. Play audio in any app (Chrome, local player) on Phone A.
+6. Once Phone B connects and starts sending, audio will be mixed: Phone A's system audio → **LEFT earbud**, Phone B's audio → **RIGHT earbud**.
+7. **Important:** The mixed audio is played via the **Alarm volume stream** to prevent stereo bleeding. **Use your Alarm volume slider** to adjust the earbud volume!
 
 ### Phone B — Sender Mode
 1. Open DualStream → tap **"I am the Sender (Phone B)"**
 2. Grant **Record Audio** and **Nearby Wi-Fi** permissions
 3. Tap **START STREAMING** → grant the MediaProjection (screen capture) permission
 4. Phone B will automatically discover and connect to Phone A
-5. The system audio from Phone B is captured, compressed (Opus 64kbps), and streamed
+5. The system audio from Phone B is captured, compressed (Opus 64kbps), and streamed to Phone A.
+
+> **Note on DRM:** Apps like Spotify, Apple Music, and Netflix block system audio capture using DRM flags. When capturing from these apps, the system outputs silent frames. DualStream will detect this and display a warning. Use a browser (like Chrome) or apps that don't enforce DRM for audio streaming.
 
 ---
 
@@ -206,9 +208,9 @@ android.enableR8.fullMode=true    # Enable full R8 optimization for release
 
 | Permission | Device | Purpose |
 |-----------|--------|---------|
-| `RECORD_AUDIO` | Phone B | System audio playback capture |
+| `RECORD_AUDIO` | Both | System audio playback capture via MediaProjection |
 | `FOREGROUND_SERVICE` | Both | Keep streaming alive in background |
-| `FOREGROUND_SERVICE_CONNECTED_DEVICE` | Both | Foreground service type declaration |
+| `FOREGROUND_SERVICE_MEDIA_PROJECTION` | Both | Foreground service type declaration for screen capture |
 | `NEARBY_WIFI_DEVICES` (API 33+) | Both | Nearby Connections Wi-Fi P2P |
 | `ACCESS_FINE_LOCATION` (API < 33) | Both | Nearby Connections (legacy) |
 | `POST_NOTIFICATIONS` (API 33+) | Both | Ongoing foreground service notification |
@@ -220,28 +222,28 @@ android.enableR8.fullMode=true    # Enable full R8 optimization for release
 
 ### Audio Pipeline (Phone A, Receiver)
 
-```
-ExoPlayer (local file/WebView)
+```text
+Phone A System Audio
     │
     ▼
-LocalAudioProcessor (AudioProcessor override)
-    │  intercepts PCM bytes at sandbox level — zero permissions, zero latency
+AudioCaptureManager (MediaProjection)
+    │  intercepts PCM bytes 
     ▼
-leftChannelBufferQueue (LinkedBlockingQueue, 30-frame capacity)
+leftChannelBufferQueue (LinkedBlockingQueue)
     │
-    ├── LEFT channel PCM ──────────────────────┐
+    ├── LEFT channel PCM (Phone A) ────────────┐
     │                                          │
 JitterBuffer (15-frame LinkedBlockingDeque)   AudioMixer.mix(left, right)
     │                                          │
     ├── RIGHT channel PCM (decoded Opus) ──────┘
     │
     ▼
-AudioTrack.write() → Bluetooth headset
+DualAudioPlayer (Alarm Stream) → Bluetooth headset
 ```
 
 ### Network Protocol
 
-```
+```text
 ┌──────────────────────────────────────────────────────┐
 │                  Audio Frame Packet                   │
 ├──────────────┬───────────────────────────────────────┤
@@ -251,25 +253,11 @@ AudioTrack.write() → Bluetooth headset
 └──────────────┴───────────────────────────────────────┘
 ```
 
-Frames are sent over a `Payload.Type.STREAM` Nearby Connections pipe, enabling continuous low-latency audio without TCP handshake overhead per frame.
+Frames are sent over a `Payload.Type.STREAM` Nearby Connections pipe, enabling continuous low-latency audio without TCP handshake overhead per frame. This provides consistent throughput, preventing the Play Services throttling that occurs with discrete payload `BYTES` delivery.
 
 ### Latency Measurement
 
 Every 5 seconds the Receiver sends a `PING` control message containing a timestamp. The Sender responds with a `PONG` echoing the timestamp. The Receiver calculates `RTT / 2` as the estimated one-way latency, displayed in the live telemetry panel.
-
----
-
-## 🛠️ Build Compatibility Notes
-
-This project targets a specific toolchain stack due to constraint interactions:
-
-| Component | Version | Reason |
-|-----------|---------|--------|
-| AGP | 9.0.1 | Requires Gradle 9.1.0 (installed globally) |
-| Kotlin | 2.0.21 | Required by AGP 9.0.1 |
-| Hilt | 2.55 | First version with Kotlin 2.x metadata support |
-| Kapt | K1 mode | Hilt 2.55 annotation processor requires K1 KAPT |
-| `android.builtInKotlin` | `false` | Prevent extension conflict between AGP built-in Kotlin and KGP 2.0 |
 
 ---
 
@@ -292,6 +280,5 @@ This project is licensed under the [MIT License](LICENSE).
 ## 🙏 Acknowledgements
 
 - [Google Nearby Connections API](https://developers.google.com/nearby/connections/overview) — P2P Wi-Fi transport layer
-- [Jetpack Media3 / ExoPlayer](https://developer.android.com/media/media3) — local audio playback and AudioProcessor pipeline
 - [Dagger Hilt](https://dagger.dev/hilt/) — dependency injection
 - [Jetpack Compose](https://developer.android.com/compose) — modern declarative UI
