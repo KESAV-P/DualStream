@@ -1,33 +1,47 @@
 package com.dualstream.network
 
-import java.io.InputStream
+import android.util.Log
+import com.google.android.gms.nearby.connection.Payload
+import com.google.android.gms.nearby.connection.PayloadCallback
+import com.google.android.gms.nearby.connection.PayloadTransferUpdate
+import javax.inject.Inject
+import javax.inject.Singleton
 
-class StreamReceiver(private val inputStream: InputStream) {
-    
-    fun readFrame(): ByteArray? {
-        try {
-            // Read 2-byte big-endian size prefix
-            val header = ByteArray(2)
-            var bytesRead = 0
-            while (bytesRead < 2) {
-                val result = inputStream.read(header, bytesRead, 2 - bytesRead)
-                if (result == -1) return null // EOF reached
-                bytesRead += result
+@Singleton
+class StreamReceiver @Inject constructor() : PayloadCallback() {
+
+    var onControlMessageReceived: ((String) -> Unit)? = null
+    var onAudioFrameReceived: ((ByteArray) -> Unit)? = null
+
+    override fun onPayloadReceived(endpointId: String, payload: Payload) {
+        when (payload.type) {
+            Payload.Type.BYTES -> {
+                val bytes = payload.asBytes() ?: return
+                if (bytes.size == 1920) {
+                    onAudioFrameReceived?.invoke(bytes)
+                } else {
+                    val json = String(bytes, Charsets.UTF_8)
+                    Log.d("DualStream", "  → BYTES payload: $json")
+                    onControlMessageReceived?.invoke(json)
+                }
             }
-            
-            val size = ((header[0].toInt() and 0xFF) shl 8) or (header[1].toInt() and 0xFF)
-            if (size <= 0) return null
-            
-            val frame = ByteArray(size)
-            var frameBytesRead = 0
-            while (frameBytesRead < size) {
-                val result = inputStream.read(frame, frameBytesRead, size - frameBytesRead)
-                if (result == -1) return null // EOF reached during frame read
-                frameBytesRead += result
+            Payload.Type.STREAM -> {
+                Log.e("DualStream", "  → STREAM payload received but we are expecting BYTES for audio!")
             }
-            return frame
-        } catch (e: Exception) {
-            return null
+            else -> {
+                Log.d("DualStream", "  → Unknown payload type: ${payload.type}")
+            }
+        }
+    }
+
+    override fun onPayloadTransferUpdate(
+        endpointId: String,
+        update: PayloadTransferUpdate
+    ) {
+        // Log transfer progress for stream payloads
+        if (update.status == PayloadTransferUpdate.Status.FAILURE) {
+            Log.e("DualStream", "Payload transfer FAILED for endpoint=$endpointId, payloadId=${update.payloadId}")
         }
     }
 }
+

@@ -71,6 +71,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.localbroadcastmanager)
 
     // Compose
     implementation(libs.androidx.compose.ui)

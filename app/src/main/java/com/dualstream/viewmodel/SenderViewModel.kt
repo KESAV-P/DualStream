@@ -29,6 +29,8 @@ class SenderViewModel @Inject constructor(
 
     val audioLevel: StateFlow<Float> = SenderForegroundService.audioLevel
 
+    val isSilenceDetected: StateFlow<Boolean> = SenderForegroundService.isSilenceDetected
+
     fun startSender() {
         // Discovery is started by the service on start.
         // Screen capture flow is launched from the UI, which then feeds the result to onMediaProjectionResult

@@ -18,12 +18,14 @@ accompanistPermissions = "0.34.0"
 junit = "4.13.2"
 androidxTestExt = "1.3.0"
 androidxTestEspresso = "3.7.0"
+localbroadcastmanager = "1.1.0"
 
 [libraries]
 # Core
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "lifecycle" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+androidx-localbroadcastmanager = { module = "androidx.localbroadcastmanager:localbroadcastmanager", version.ref = "localbroadcastmanager" }
 
 # Compose
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }

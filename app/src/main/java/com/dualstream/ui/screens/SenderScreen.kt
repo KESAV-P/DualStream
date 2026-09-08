@@ -47,6 +47,7 @@ fun SenderScreen(
     val connectionState by viewModel.connectionState.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
     val audioLevel by viewModel.audioLevel.collectAsState()
+    val isSilenceDetected by viewModel.isSilenceDetected.collectAsState()
     val scrollState = rememberScrollState()
 
     val mediaProjectionManager = remember {
@@ -78,8 +79,8 @@ fun SenderScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Sender", style = MaterialTheme.typography.titleMedium, color = iOSWhite)
-                        Text("Phone A", fontSize = 12.sp, color = iOSSecondary)
+                        Text("Receiver", style = MaterialTheme.typography.titleMedium, color = iOSWhite)
+                        Text("Phone B", fontSize = 12.sp, color = iOSSecondary)
                     }
                 },
                 navigationIcon = {
@@ -105,6 +106,42 @@ fun SenderScreen(
 
             // ── 1. Connection Status ──────────────────────────────────────────
             ConnectionStatusCard(state = connectionState)
+
+            if (isStreaming && isSilenceDetected) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = iOSRed.copy(alpha = 0.15f)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, iOSRed.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "DRM Warning",
+                            tint = iOSRed,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Silence Detected (Potential DRM)",
+                                fontWeight = FontWeight.Bold,
+                                color = iOSWhite,
+                                fontSize = 14.sp
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Apps like Spotify, Netflix, or Apple Music block audio capture. Try playing audio in Chrome/browser instead.",
+                                color = iOSSecondary,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+            }
 
             // ── 2. Central Stream Button ──────────────────────────────────────
             Spacer(modifier = Modifier.height(16.dp))
@@ -152,7 +189,7 @@ fun SenderScreen(
 
                 IosStatRow(
                     label = "Bitrate",
-                    value = if (isStreaming) "128 kbps" else "—",
+                    value = if (isStreaming) "768 kbps (Raw PCM)" else "—",
                     valueColor = if (isStreaming) iOSGreen else iOSSecondary,
                     isFirst = true,
                     isLast = false

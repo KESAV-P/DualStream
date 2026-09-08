@@ -166,15 +166,15 @@ fun HomeScreen(
                 .background(iOSGrayBg, RoundedCornerShape(14.dp))
         ) {
             ModeRow(
-                emoji = "📡",
+                emoji = "🎧",
                 iconBg = iOSPurple,
                 title = "Sender",
-                subtitle = "Stream Phone A's audio",
+                subtitle = "Mix and play both streams",
                 tag = "Phone A",
                 isFirst = true,
                 isLast = false,
                 onClick = {
-                    if (permissionState.allPermissionsGranted) onNavigateToSender()
+                    if (permissionState.allPermissionsGranted) onNavigateToReceiver()
                     else showRationale.value = true
                 }
             )
@@ -189,15 +189,15 @@ fun HomeScreen(
             )
 
             ModeRow(
-                emoji = "🎧",
+                emoji = "📡",
                 iconBg = iOSBlue,
                 title = "Receiver",
-                subtitle = "Mix and play both streams",
+                subtitle = "Stream Phone B's audio",
                 tag = "Phone B",
                 isFirst = false,
                 isLast = true,
                 onClick = {
-                    if (permissionState.allPermissionsGranted) onNavigateToReceiver()
+                    if (permissionState.allPermissionsGranted) onNavigateToSender()
                     else showRationale.value = true
                 }
             )

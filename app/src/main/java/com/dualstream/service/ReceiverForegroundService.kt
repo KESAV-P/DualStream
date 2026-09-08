@@ -1,22 +1,18 @@
 package com.dualstream.service
 
-import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.media.AudioAttributes
-import android.media.AudioFormat
 import android.media.AudioManager
-import android.media.AudioTrack
-import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
-import com.dualstream.audio.*
+import com.dualstream.audio.DualAudioPlayer
+import com.dualstream.audio.JitterBuffer
+import com.dualstream.audio.LocalAudioCapture
 import com.dualstream.model.AudioStats
-import com.dualstream.model.ConnectionState
 import com.dualstream.network.NearbyConnectionManager
 import com.dualstream.network.StreamReceiver
 import com.dualstream.util.NotificationHelper
@@ -26,8 +22,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONObject
-import java.io.InputStream
-import java.util.concurrent.LinkedBlockingQueue
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -37,10 +31,7 @@ class ReceiverForegroundService : Service() {
     lateinit var nearbyConnectionManager: NearbyConnectionManager
 
     @Inject
-    lateinit var opusDecoder: OpusDecoder
-
-    @Inject
-    lateinit var audioMixer: AudioMixer
+    lateinit var dualAudioPlayer: DualAudioPlayer
 
     @Inject
     lateinit var jitterBuffer: JitterBuffer
@@ -48,28 +39,23 @@ class ReceiverForegroundService : Service() {
     @Inject
     lateinit var notificationHelper: NotificationHelper
 
+    @Inject
+    lateinit var localAudioCapture: LocalAudioCapture
+
+    @Inject
+    lateinit var streamReceiver: StreamReceiver
+
     private var wakeLock: PowerManager.WakeLock? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     
-    private var audioTrack: AudioTrack? = null
-    private var exoPlayer: androidx.media3.exoplayer.ExoPlayer? = null
-    private val localAudioProcessor = LocalAudioProcessor()
-    
-    private val leftChannelBufferQueue = LinkedBlockingQueue<ByteArray>(30)
-    private val silenceBuffer = ByteArray(BYTES_PER_FRAME)
-
-    private var networkReceiveJob: Job? = null
-    private var localCaptureJob: Job? = null
-    private var mixingJob: Job? = null
+    private var mixJob: Job? = null
+    private var streamReaderJob: Job? = null
     private var pingJob: Job? = null
+    private var audioFocusRequest: android.media.AudioFocusRequest? = null
 
     companion object {
         private val _audioStats = MutableStateFlow(AudioStats())
         val audioStats: StateFlow<AudioStats> = _audioStats.asStateFlow()
-        
-        const val ACTION_PLAY = "com.dualstream.ACTION_PLAY"
-        const val ACTION_STOP_MEDIA = "com.dualstream.ACTION_STOP_MEDIA"
-        const val EXTRA_AUDIO_URI = "com.dualstream.EXTRA_AUDIO_URI"
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -82,216 +68,136 @@ class ReceiverForegroundService : Service() {
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DualStream::ReceiverWakeLock").apply {
             acquire()
         }
-
-        initAudioTrack()
-        initExoPlayer()
-    }
-
-    private fun initAudioTrack() {
-        try {
-            audioTrack = AudioTrack.Builder()
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build()
-                )
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                        .setSampleRate(SAMPLE_RATE)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
-                        .build()
-                )
-                .setBufferSizeInBytes(BYTES_PER_FRAME * 8)
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .build()
-            
-            Log.d("DualStream", "AudioTrack initialized successfully")
-        } catch (e: Exception) {
-            Log.e("DualStream", "Failed to initialize AudioTrack", e)
-        }
-    }
-
-    private fun initExoPlayer() {
-        try {
-            val renderersFactory = object : androidx.media3.exoplayer.DefaultRenderersFactory(this) {
-                override fun buildAudioSink(
-                    context: Context,
-                    enableFloatOutput: Boolean,
-                    enableAudioTrackPlaybackParams: Boolean
-                ): androidx.media3.exoplayer.audio.AudioSink? {
-                    return androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
-                        .setAudioProcessors(arrayOf(localAudioProcessor))
-                        .build()
-                }
-            }
-
-            exoPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(this)
-                .setRenderersFactory(renderersFactory)
-                .build().apply {
-                    volume = 0f // Mute local direct output (rendered via AudioTrack mixing loop)
-                    repeatMode = androidx.media3.common.Player.REPEAT_MODE_ALL
-                }
-            Log.d("DualStream", "Receiver ExoPlayer initialized")
-        } catch (e: Exception) {
-            Log.e("DualStream", "Failed to initialize ExoPlayer", e)
-        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d("DualStream", "ReceiverForegroundService started")
 
-        when (intent?.action) {
-            ACTION_PLAY -> {
-                val uriString = intent.getStringExtra(EXTRA_AUDIO_URI)
-                if (uriString != null) {
-                    playUri(Uri.parse(uriString))
-                }
-            }
-            ACTION_STOP_MEDIA -> {
-                exoPlayer?.stop()
-            }
-            else -> {
-                val notification = notificationHelper.buildReceiverNotification()
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    startForeground(102, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
-                } else {
-                    startForeground(102, notification)
-                }
-
-                nearbyConnectionManager.startAdvertising()
-
-                startPipelineLoops()
-            }
+        val notification = notificationHelper.buildReceiverNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(102, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+        } else {
+            startForeground(102, notification)
         }
+
+        nearbyConnectionManager.startAdvertising()
+
+        dualAudioPlayer.initialize()
+
+        startPipelineLoops()
 
         return START_NOT_STICKY
     }
 
-    private fun playUri(uri: Uri) {
-        exoPlayer?.let { player ->
-            player.stop()
-            player.clearMediaItems()
-            player.setMediaItem(androidx.media3.common.MediaItem.fromUri(uri))
-            player.prepare()
-            player.play()
-            Log.d("DualStream", "ExoPlayer playing local file URI: $uri")
+    private fun requestAudioFocus() {
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val focusRequest = android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(
+                    android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+                .setOnAudioFocusChangeListener { focusChange ->
+                    Log.d("DualStream", "Receiver audio focus change: $focusChange")
+                }
+                .build()
+            audioFocusRequest = focusRequest
+            audioManager.requestAudioFocus(focusRequest)
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.requestAudioFocus(
+                { focusChange -> Log.d("DualStream", "Receiver audio focus change: $focusChange") },
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN
+            )
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+            audioFocusRequest = null
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.abandonAudioFocus { }
         }
     }
 
     private fun startPipelineLoops() {
-        if (networkReceiveJob != null) return // Already running
+        if (mixJob != null) return // Already running
         
-        Log.d("DualStream", "Starting Receiver pipeline loops")
+        Log.d("DualStream", "▶ Starting Receiver pipeline loops")
         jitterBuffer.clear()
-        leftChannelBufferQueue.clear()
 
-        // Loop 1: Network Receive Loop
-        networkReceiveJob = serviceScope.launch {
-            nearbyConnectionManager.incomingPayloads.collect { payload ->
-                val stream = payload.asStream()?.asInputStream() ?: return@collect
-                val streamReceiver = StreamReceiver(stream)
-                Log.d("DualStream", "Receiver pipeline reading stream payload")
-                
-                try {
-                    while (isActive) {
-                        val opusBytes = streamReceiver.readFrame() ?: break
-                        val pcmBytes = opusDecoder.decode(opusBytes)
-                        if (pcmBytes != null) {
-                            jitterBuffer.offer(pcmBytes)
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e("DualStream", "Error reading streaming payload", e)
-                }
+        localAudioCapture.initialize()
+        requestAudioFocus()
+
+        // Stream Reader Job — reading from network stream and writing to jitter buffer
+        streamReceiver.onAudioFrameReceived = { frameBytes ->
+            jitterBuffer.write(frameBytes)
+            // Log occasionally to avoid spam
+            if (jitterBuffer.packetsReceived % 100 == 1L) {
+                Log.d("DualStream", "StreamReader: frame written to jitter buffer (bufHealth=${jitterBuffer.bufferHealthPercent}%)")
             }
         }
 
-        // Loop 2: Local Audio Interception & Capture Loop
-        localCaptureJob = serviceScope.launch {
-            val chunkBuffer = ByteArray(BYTES_PER_FRAME)
-            var bytesBuffered = 0
+        // Single mixing loop — clocked by AudioTrack.write(WRITE_BLOCKING) inside writeMixed
+        // CRITICAL FIX: When both sources are null, we must NOT spin at full CPU speed.
+        // We yield() every iteration and delay when idle, so the streamReaderJob can run.
+        mixJob = serviceScope.launch(Dispatchers.IO) {
+            Log.d("DualStream", "Mixing loop STARTED")
+            var idleFrames = 0L
+            var activeFrames = 0L
             while (isActive) {
-                try {
-                    val rawChunk = localAudioProcessor.pcmQueue.poll()
-                    if (rawChunk != null) {
-                        var sourceIdx = 0
-                        while (sourceIdx < rawChunk.size && isActive) {
-                            val space = BYTES_PER_FRAME - bytesBuffered
-                            val toCopy = Math.min(space, rawChunk.size - sourceIdx)
-                            System.arraycopy(rawChunk, sourceIdx, chunkBuffer, bytesBuffered, toCopy)
-                            bytesBuffered += toCopy
-                            sourceIdx += toCopy
+                val networkMono = jitterBuffer.poll()
+                val localMono = localAudioCapture.localPcmChannel
+                    .tryReceive()
+                    .getOrNull()
 
-                            if (bytesBuffered == BYTES_PER_FRAME) {
-                                if (leftChannelBufferQueue.size >= 30) {
-                                    leftChannelBufferQueue.poll() // Drop oldest
-                                }
-                                leftChannelBufferQueue.offer(chunkBuffer.copyOf())
-                                bytesBuffered = 0
-                            }
-                        }
-                    } else {
-                        // Empty queue, sleep briefly to prevent high CPU usage
-                        delay(5)
+                if (networkMono == null && localMono == null) {
+                    // *** CRITICAL: Don't spin writing silent frames at CPU speed ***
+                    // This was starving the streamReaderJob coroutine, preventing audio from
+                    // ever reaching the jitter buffer.
+                    idleFrames++
+                    if (idleFrames % 500 == 1L) {
+                        Log.d("DualStream", "MixLoop idle — no audio from either source (idle=$idleFrames, jbuf=${jitterBuffer.bufferHealthPercent}%)")
                     }
-                } catch (e: Exception) {
-                    Log.e("DualStream", "Error in local capture loop", e)
-                }
-            }
-        }
-
-        // Loop 3: Mix and Playback Loop
-        mixingJob = serviceScope.launch {
-            audioTrack?.play()
-            Log.d("DualStream", "AudioTrack play() called")
-
-            var nextTime = System.currentTimeMillis()
-            while (isActive) {
-                val leftPcm = leftChannelBufferQueue.poll() ?: silenceBuffer
-                
-                // Buffer overflow/underflow handling:
-                // If health is 100% (queue is full), drain faster.
-                val rightPcm = if (jitterBuffer.bufferHealthPercent >= 100) {
-                    jitterBuffer.poll() // Discard one frame
-                    jitterBuffer.poll() // Take the next frame
-                } else {
-                    jitterBuffer.poll()
+                    delay(10) // ~10ms pause — gives streamReaderJob CPU time
+                    yield()
+                    continue
                 }
 
-                // localPcm is Phone B's local audio (leftPcm), receivedPcm is Phone A's received audio (rightPcm)
-                val mixed = audioMixer.mix(localPcm = leftPcm, receivedPcm = rightPcm)
-                
-                writeAudioToTrack(mixed)
+                // We have at least one source — write the mixed frame
+                activeFrames++
+                if (activeFrames % 100 == 1L) {
+                    Log.d("DualStream", "MixLoop active frame #$activeFrames — net=${networkMono != null}, loc=${localMono != null}")
+                }
 
-                // Update Stats (Phone A received stream -> Left ear; Phone B local stream -> Right ear)
-                val leftLevel = audioMixer.calculateLevel(rightPcm)
-                val rightLevel = audioMixer.calculateLevel(leftPcm)
-                
+                dualAudioPlayer.writeMixed(networkMono, localMono)
+
+                // Update levels for UI stats
+                val leftLevel = networkMono?.let { dualAudioPlayer.calculateLevel(it) } ?: 0f
+                val rightLevel = localMono?.let { dualAudioPlayer.calculateLevel(it) } ?: 0f
+                updateLeftChannelLevel(leftLevel)
+                updateRightChannelLevel(rightLevel)
+
+                // Update stats
                 _audioStats.value = _audioStats.value.copy(
-                    leftChannelLevel = leftLevel,
-                    rightChannelLevel = rightLevel,
                     bufferHealth = jitterBuffer.bufferHealthPercent,
                     packetsReceived = jitterBuffer.packetsReceived,
                     packetsDropped = jitterBuffer.packetsDropped,
-                    bitrateKbps = 128 // Opus configured profile is 128kbps stereo
+                    bitrateKbps = 768
                 )
 
-                // Maintain 20ms frame timing
-                nextTime += FRAME_SIZE_MS
-                val sleepTime = nextTime - System.currentTimeMillis()
-                if (sleepTime > 0) {
-                    delay(sleepTime)
-                } else {
-                    nextTime = System.currentTimeMillis()
-                }
+                yield() // Cooperative multitasking
             }
         }
 
         // Latency Measurement Job (PING/PONG)
         pingJob = serviceScope.launch {
-            // Wait for connection to be stable
             while (isActive) {
                 delay(5000)
                 if (nearbyConnectionManager.connectedEndpointId != null) {
@@ -319,45 +225,35 @@ class ReceiverForegroundService : Service() {
         }
     }
 
-    private fun writeAudioToTrack(mixed: ByteArray) {
-        val track = audioTrack ?: return
-        try {
-            val result = track.write(mixed, 0, mixed.size)
-            if (result < 0) {
-                Log.e("DualStream", "AudioTrack.write error: $result. Reinitializing AudioTrack.")
-                reinitAudioTrack()
-            }
-        } catch (e: Exception) {
-            Log.e("DualStream", "Exception during AudioTrack.write", e)
-            reinitAudioTrack()
+    private fun updateLeftChannelLevel(level: Float) {
+        val intent = Intent("com.dualstream.AUDIO_LEVEL").apply {
+            putExtra("channel", "left")
+            putExtra("level", level)
         }
+        androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
     }
 
-    private fun reinitAudioTrack() {
-        try {
-            audioTrack?.stop()
-            audioTrack?.release()
-        } catch (e: Exception) {}
-        initAudioTrack()
-        audioTrack?.play()
+    private fun updateRightChannelLevel(level: Float) {
+        val intent = Intent("com.dualstream.AUDIO_LEVEL").apply {
+            putExtra("channel", "right")
+            putExtra("level", level)
+        }
+        androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
     }
 
     private fun stopPipelineLoops() {
         Log.d("DualStream", "Stopping Receiver pipeline loops")
-        networkReceiveJob?.cancel()
-        networkReceiveJob = null
-        localCaptureJob?.cancel()
-        localCaptureJob = null
-        mixingJob?.cancel()
-        mixingJob = null
+        mixJob?.cancel()
+        mixJob = null
+        streamReaderJob?.cancel()
+        streamReaderJob = null
         pingJob?.cancel()
         pingJob = null
         
-        try {
-            audioTrack?.stop()
-        } catch (e: Exception) {}
+        abandonAudioFocus()
+        localAudioCapture.release()
+        dualAudioPlayer.release()
         
-        leftChannelBufferQueue.clear()
         jitterBuffer.clear()
     }
 
@@ -366,15 +262,8 @@ class ReceiverForegroundService : Service() {
         Log.d("DualStream", "ReceiverForegroundService destroyed")
         stopPipelineLoops()
         serviceScope.cancel()
-
-        exoPlayer?.release()
-        exoPlayer = null
-        
-        audioTrack?.release()
-        audioTrack = null
         
         nearbyConnectionManager.disconnect()
-        opusDecoder.release()
 
         wakeLock?.let {
             if (it.isHeld) {
@@ -384,3 +273,4 @@ class ReceiverForegroundService : Service() {
         stopForeground(true)
     }
 }
+

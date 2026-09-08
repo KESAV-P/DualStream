@@ -1,21 +1,55 @@
 package com.dualstream.network
 
-import java.io.OutputStream
+import android.util.Log
+import com.google.android.gms.nearby.connection.ConnectionsClient
+import com.google.android.gms.nearby.connection.Payload
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+import javax.inject.Singleton
 
-class StreamSender(private val outputStream: OutputStream) {
-    
-    @Synchronized
-    fun sendFrame(frame: ByteArray) {
-        val size = frame.size
-        if (size <= 0) return
+@Singleton
+class StreamSender @Inject constructor(
+    private val connectionsClient: ConnectionsClient
+) {
+    private var sendJob: Job? = null
+
+    fun startSending(
+        endpointId: String,
+        monoFrameFlow: Flow<ByteArray>,
+        scope: CoroutineScope
+    ) {
+        Log.d("DualStream", "▶ StreamSender.startSending() [BYTES Mode] — endpoint=$endpointId")
         
-        // 2-byte big-endian size prefix
-        val header = ByteArray(2)
-        header[0] = (size shr 8 and 0xFF).toByte()
-        header[1] = (size and 0xFF).toByte()
-        
-        outputStream.write(header)
-        outputStream.write(frame)
-        outputStream.flush()
+        sendJob = scope.launch(Dispatchers.IO) {
+            var framesSent = 0L
+            try {
+                monoFrameFlow.collect { frame ->
+                    // Send each 1920-byte frame as a BYTES payload instead of STREAM.
+                    // This bypasses all InputStream/Pipe blocking issues!
+                    val payload = Payload.fromBytes(frame)
+                    connectionsClient.sendPayload(endpointId, payload)
+                    
+                    framesSent++
+                    if (framesSent % 100 == 1L) {
+                        Log.d("DualStream", "StreamSender: frame #$framesSent sent as BYTES (${frame.size} bytes)")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("DualStream", "StreamSender error after $framesSent frames", e)
+            }
+            Log.d("DualStream", "StreamSender send loop ended — total frames: $framesSent")
+        }
+    }
+
+    fun stopSending() {
+        Log.d("DualStream", "StreamSender.stopSending()")
+        sendJob?.cancel()
+        sendJob = null
     }
 }
+
+

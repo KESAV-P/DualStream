@@ -1,10 +1,8 @@
 package com.dualstream.di
 
 import android.content.Context
-import com.dualstream.audio.AudioMixer
+import com.dualstream.audio.DualAudioPlayer
 import com.dualstream.audio.JitterBuffer
-import com.dualstream.audio.OpusDecoder
-import com.dualstream.audio.OpusEncoder
 import com.dualstream.network.NearbyConnectionManager
 import com.dualstream.util.NotificationHelper
 import dagger.Module
@@ -20,34 +18,31 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideNearbyConnectionManager(
+    fun provideConnectionsClient(
         @ApplicationContext context: Context
-    ): NearbyConnectionManager {
-        return NearbyConnectionManager(context)
+    ): com.google.android.gms.nearby.connection.ConnectionsClient {
+        return com.google.android.gms.nearby.Nearby.getConnectionsClient(context)
     }
 
     @Provides
     @Singleton
-    fun provideAudioMixer(): AudioMixer {
-        return AudioMixer()
+    fun provideNearbyConnectionManager(
+        @ApplicationContext context: Context,
+        streamReceiver: com.dualstream.network.StreamReceiver
+    ): NearbyConnectionManager {
+        return NearbyConnectionManager(context, streamReceiver)
+    }
+
+    @Provides
+    @Singleton
+    fun provideDualAudioPlayer(): DualAudioPlayer {
+        return DualAudioPlayer()
     }
 
     @Provides
     @Singleton
     fun provideJitterBuffer(): JitterBuffer {
         return JitterBuffer()
-    }
-
-    @Provides
-    @Singleton
-    fun provideOpusEncoder(): OpusEncoder {
-        return OpusEncoder()
-    }
-
-    @Provides
-    @Singleton
-    fun provideOpusDecoder(): OpusDecoder {
-        return OpusDecoder()
     }
 
     @Provides

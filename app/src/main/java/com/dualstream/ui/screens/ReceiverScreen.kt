@@ -1,8 +1,6 @@
 package com.dualstream.ui.screens
 
 import android.net.Uri
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -12,18 +10,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.dualstream.model.ConnectionState
 import com.dualstream.ui.components.AudioLevelBar
@@ -37,17 +35,22 @@ fun ReceiverScreen(
     onNavigateBack: () -> Unit,
     viewModel: ReceiverViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val connectionState by viewModel.connectionState.collectAsState()
     val audioStats by viewModel.audioStats.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
+    val isCallActive by viewModel.isRemoteCallActive.collectAsState()
+    val isSilenceDetected by viewModel.isRemoteSilenceDetected.collectAsState()
 
-    var useWebView by remember { mutableStateOf(true) }
     val scrollState = rememberScrollState()
 
+    var urlText by remember { mutableStateOf("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3") }
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        if (uri != null) viewModel.playLocalFile(uri)
+        if (uri != null) {
+            viewModel.playLocalUri(uri)
+        }
     }
 
     Scaffold(
@@ -55,8 +58,8 @@ fun ReceiverScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Receiver", style = MaterialTheme.typography.titleMedium, color = iOSWhite)
-                        Text("Phone B — Master Device", fontSize = 12.sp, color = iOSSecondary)
+                        Text("Sender", style = MaterialTheme.typography.titleMedium, color = iOSWhite)
+                        Text("Phone A — Master Device", fontSize = 12.sp, color = iOSSecondary)
                     }
                 },
                 navigationIcon = {
@@ -78,6 +81,69 @@ fun ReceiverScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Spacer(modifier = Modifier.height(4.dp))
+
+            // ── Call State Banner ─────────────────────────────────────────────
+            if (isCallActive) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Phone, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Phone B (Receiver) is on a call — streaming paused",
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+
+            if (isSilenceDetected) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = iOSRed.copy(alpha = 0.15f)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, iOSRed.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "DRM Warning",
+                            tint = iOSRed,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Silence Detected on Phone A",
+                                fontWeight = FontWeight.Bold,
+                                color = iOSWhite,
+                                fontSize = 14.sp
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Spotify, Apple Music, and Netflix block streaming. Ask Phone A user to play via Chrome/browser instead.",
+                                color = iOSSecondary,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+            }
 
             // ── 1. Connection Status ──────────────────────────────────────────
             ConnectionStatusCard(state = connectionState)
@@ -130,32 +196,47 @@ fun ReceiverScreen(
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
-                        "Start Receiver",
+                        "Start Sender",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = iOSWhite
                     )
                 }
 
-                // Stream Remote — secondary full-width button
-                Button(
-                    onClick = { viewModel.sendStartStreamCommand() },
-                    enabled = isConnected,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = iOSPurple,
-                        disabledContainerColor = iOSPurple.copy(alpha = 0.25f)
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(
-                        "Stream Remote Audio",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (isConnected) iOSWhite else iOSWhite.copy(alpha = 0.35f)
-                    )
+                // Stream Remote — auto-stream status display
+                if (isConnected) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = iOSPurple.copy(alpha = 0.15f)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (audioStats.packetsReceived == 0L) {
+                                CircularProgressIndicator(
+                                    color = iOSPurple,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Phone, // or some other icon
+                                    contentDescription = "Active",
+                                    tint = iOSPurple,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = if (audioStats.packetsReceived > 0) "Streaming active from Phone A" else "Waiting for Phone A...",
+                                color = iOSWhite,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
                 }
 
                 // Stop — destructive button
@@ -181,99 +262,70 @@ fun ReceiverScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(iOSGrayBg, RoundedCornerShape(14.dp))
-                    .padding(bottom = if (useWebView) 0.dp else 16.dp)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                ReceiverGroupHeader(
-                    text = "LOCAL AUDIO SOURCE",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                ReceiverGroupHeader(text = "LOCAL AUDIO SOURCE")
+                
+                Text(
+                    text = "Stream local audio directly to the right earbud.",
+                    fontSize = 13.sp,
+                    color = iOSSecondary
                 )
 
-                // Switch row
+                OutlinedTextField(
+                    value = urlText,
+                    onValueChange = { urlText = it },
+                    label = { Text("Stream URL") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = iOSBlue,
+                        unfocusedBorderColor = iOSSeparator,
+                        focusedLabelColor = iOSBlue,
+                        unfocusedLabelColor = iOSSecondary,
+                        focusedTextColor = iOSWhite,
+                        unfocusedTextColor = iOSWhite
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                )
+
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .padding(bottom = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Column {
-                        Text("YouTube Music", fontSize = 16.sp, color = iOSWhite)
-                        Text("Open web player in-app", fontSize = 13.sp, color = iOSSecondary)
+                    Button(
+                        onClick = { viewModel.playLocalUrl(urlText) },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = iOSBlue),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Play URL", color = iOSWhite)
                     }
-                    Switch(
-                        checked = useWebView,
-                        onCheckedChange = {
-                            useWebView = it
-                            if (!it) viewModel.stopLocalPlayback()
-                        },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = iOSWhite,
-                            checkedTrackColor = iOSGreen,
-                            uncheckedThumbColor = iOSWhite,
-                            uncheckedTrackColor = iOSLightGrayBg
-                        )
-                    )
+                    Button(
+                        onClick = { viewModel.stopLocalAudio() },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = iOSRed),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Stop Player", color = iOSWhite)
+                    }
                 }
 
-                if (useWebView) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    AndroidView(
-                        factory = { ctx ->
-                            WebView(ctx).apply {
-                                settings.javaScriptEnabled = true
-                                settings.domStorageEnabled = true
-                                settings.mediaPlaybackRequiresUserGesture = false
-                                webViewClient = WebViewClient()
-                                loadUrl("https://music.youtube.com")
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(480.dp)
-                            .clip(
-                                RoundedCornerShape(
-                                    topStart = 0.dp, topEnd = 0.dp,
-                                    bottomStart = 14.dp, bottomEnd = 14.dp
-                                )
-                            )
-                    )
-                } else {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    // File picker section
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Button(
-                            onClick = { filePickerLauncher.launch("audio/*") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = iOSBlue),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("Choose Audio File", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = iOSWhite)
-                        }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(0.5.dp)
+                        .background(iOSSeparator)
+                )
 
-                        if (isPlaying) {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Icon(Icons.Default.PlayArrow, contentDescription = "Playing", tint = iOSGreen, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Playing…", fontSize = 14.sp, color = iOSGreen)
-                                Spacer(modifier = Modifier.width(16.dp))
-                                IconButton(onClick = { viewModel.stopLocalPlayback() }, modifier = Modifier.size(32.dp)) {
-                                    Icon(Icons.Default.Stop, contentDescription = "Stop", tint = iOSRed, modifier = Modifier.size(18.dp))
-                                }
-                            }
-                        }
-                    }
+                Button(
+                    onClick = { filePickerLauncher.launch("audio/*") },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = iOSLightGrayBg),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Select Local Audio File", color = iOSBlue)
                 }
             }
 
@@ -397,3 +449,4 @@ private fun TelemetryRow(
         )
     }
 }
+
