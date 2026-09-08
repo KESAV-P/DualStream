@@ -142,6 +142,11 @@ class NearbyConnectionManager @Inject constructor(
             _connectionState.value = ConnectionState.Error("Google Play Services unavailable")
             return
         }
+        val currentState = _connectionState.value
+        if (currentState is ConnectionState.Discovering || currentState is ConnectionState.Connecting || currentState is ConnectionState.Connected) {
+            Log.d("DualStream", "Already in active state ($currentState), ignoring startAdvertising")
+            return
+        }
         currentMode = AppMode.RECEIVER
         _connectionState.value = ConnectionState.Discovering
         val options = AdvertisingOptions.Builder().setStrategy(STRATEGY).build()
@@ -162,6 +167,11 @@ class NearbyConnectionManager @Inject constructor(
     fun startDiscovery() {
         if (!isPlayServicesAvailable()) {
             _connectionState.value = ConnectionState.Error("Google Play Services unavailable")
+            return
+        }
+        val currentState = _connectionState.value
+        if (currentState is ConnectionState.Discovering || currentState is ConnectionState.Connecting || currentState is ConnectionState.Connected) {
+            Log.d("DualStream", "Already in active state ($currentState), ignoring startDiscovery")
             return
         }
         currentMode = AppMode.SENDER

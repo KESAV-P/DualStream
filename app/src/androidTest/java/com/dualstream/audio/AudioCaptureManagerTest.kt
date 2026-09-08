@@ -24,7 +24,8 @@ class AudioCaptureManagerTest {
     @Before
     fun setup() {
         context = InstrumentationRegistry.getInstrumentation().targetContext
-        classUnderTest = AudioCaptureManager(context)
+        mockMediaProjection = mockk(relaxed = true)
+        classUnderTest = AudioCaptureManager(context, mockMediaProjection)
         
         // We cannot fully mock MediaProjection easily in androidTest without a real screen capture intent,
         // but we can test the helper methods. For full capture flow, we need a real MediaProjection token
@@ -33,12 +34,9 @@ class AudioCaptureManagerTest {
     }
 
     @Test
-    fun testIsAlternateOutputAvailable() {
-        // Without an alternate output connected to the emulator, this might be false.
-        // We just ensure it doesn't crash.
-        val isAvailable = classUnderTest.isAlternateOutputAvailable()
-        // Log the result, no strict assertion because it depends on the emulator state
-        println("isAlternateOutputAvailable: $isAvailable")
+    fun testInitialization() {
+        // Just verify it can be instantiated without crashing
+        assertTrue(::classUnderTest.isInitialized)
     }
     
     @Test

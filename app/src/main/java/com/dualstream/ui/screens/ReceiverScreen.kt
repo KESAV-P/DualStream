@@ -75,7 +75,7 @@ fun ReceiverScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Sender", style = MaterialTheme.typography.titleMedium, color = iOSWhite)
+                        Text("Receiver", style = MaterialTheme.typography.titleMedium, color = iOSWhite)
                         Text("Phone A — Master Device", fontSize = 12.sp, color = iOSSecondary)
                     }
                 },
@@ -223,21 +223,27 @@ fun ReceiverScreen(
                 Spacer(modifier = Modifier.height(2.dp))
 
                 val isConnected = connectionState is ConnectionState.Connected
+                val isConnecting = connectionState is ConnectionState.Discovering || connectionState is ConnectionState.Connecting
+                val isButtonActive = isPlaying || isConnecting
 
                 // Start Receiver — primary full-width button
                 Button(
                     onClick = {
-                        val intent = mediaProjectionManager.createScreenCaptureIntent()
-                        captureLauncher.launch(intent)
+                        if (isButtonActive) {
+                            viewModel.stopReceiver()
+                        } else {
+                            val intent = mediaProjectionManager.createScreenCaptureIntent()
+                            captureLauncher.launch(intent)
+                        }
                     },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = iOSBlue),
+                    colors = ButtonDefaults.buttonColors(containerColor = if (isButtonActive) iOSRed else iOSBlue),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
-                        "Start Sender",
+                        if (isButtonActive) "Stop" else "Start Receiver",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = iOSWhite
@@ -271,30 +277,13 @@ fun ReceiverScreen(
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                text = if (audioStats.packetsReceived > 0) "Streaming active from Phone A" else "Waiting for Phone A...",
+                                text = if (audioStats.packetsReceived > 0) "Streaming active from Phone B" else "Waiting for Phone B...",
                                 color = iOSWhite,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Medium
                             )
                         }
                     }
-                }
-
-                // Stop — destructive button
-                Button(
-                    onClick = { viewModel.stopReceiver() },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = iOSRed),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(
-                        "Stop",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = iOSWhite
-                    )
                 }
             }
 

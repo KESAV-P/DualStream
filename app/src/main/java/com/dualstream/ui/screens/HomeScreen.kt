@@ -168,7 +168,7 @@ fun HomeScreen(
             ModeRow(
                 emoji = "🎧",
                 iconBg = iOSPurple,
-                title = "Sender",
+                title = "Receiver",
                 subtitle = "Mix and play both streams",
                 tag = "Phone A",
                 isFirst = true,
@@ -191,7 +191,7 @@ fun HomeScreen(
             ModeRow(
                 emoji = "📡",
                 iconBg = iOSBlue,
-                title = "Receiver",
+                title = "Sender",
                 subtitle = "Stream Phone B's audio",
                 tag = "Phone B",
                 isFirst = false,

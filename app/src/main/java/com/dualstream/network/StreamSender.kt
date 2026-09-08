@@ -21,6 +21,9 @@ class StreamSender @Inject constructor(
 ) {
     private var sendJob: Job? = null
     private var outputStream: OutputStream? = null
+    internal fun createOutputStream(fd: ParcelFileDescriptor): OutputStream {
+        return ParcelFileDescriptor.AutoCloseOutputStream(fd)
+    }
 
     fun startSending(
         endpointId: String,
@@ -33,11 +36,11 @@ class StreamSender @Inject constructor(
         val readFd = fds[0]
         val writeFd = fds[1]
         
-        outputStream = ParcelFileDescriptor.AutoCloseOutputStream(writeFd)
+        outputStream = createOutputStream(writeFd)
         val payload = Payload.fromStream(readFd)
         connectionsClient.sendPayload(endpointId, payload)
         
-        sendJob = scope.launch(Dispatchers.IO) {
+        sendJob = scope.launch {
             var framesSent = 0L
             val frameChannel = Channel<ByteArray>(capacity = 25, onBufferOverflow = BufferOverflow.DROP_OLDEST)
             
@@ -65,7 +68,7 @@ class StreamSender @Inject constructor(
                 Log.e("DualStream", "StreamSender collect error after $framesSent frames", e)
             } finally {
                 frameChannel.close()
-                writerJob.cancel()
+                writerJob.join()
                 Log.d("DualStream", "StreamSender send loop ended — total frames: $framesSent")
                 stopSending()
             }

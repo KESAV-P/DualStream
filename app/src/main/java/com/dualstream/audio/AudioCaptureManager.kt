@@ -103,11 +103,7 @@ class AudioCaptureManager(
             val monoBuffer = ByteArray(MONO_BYTES)
             var totalFramesEmitted = 0L
 
-            var currentGain = 1.0f
-            val targetPeakRatio = 0.9f
-            val maxSampleValue = 32768f
-            val attack = 0.3f
-            val release = 0.05f
+            val gainCalculator = com.dualstream.audio.AudioGainCalculator()
 
             while (currentCoroutineContext().isActive) {
                 if (isPaused) {
@@ -149,40 +145,7 @@ class AudioCaptureManager(
                     if (_isSilenceDetected.value) _isSilenceDetected.value = false
                     
                     if (useGainMakeup) {
-                        var peak = 0
-                        for (i in 0 until (MONO_BYTES / 2)) {
-                            val low = monoBuffer[i * 2].toInt() and 0xFF
-                            val high = monoBuffer[i * 2 + 1].toInt() shl 8
-                            val sample = (low or high).toShort()
-                            val absSample = Math.abs(sample.toInt())
-                            if (absSample > peak) peak = absSample
-                        }
-
-                        val peakFloat = peak.toFloat() / maxSampleValue
-                        val targetGain = if (peakFloat > 0.01f) {
-                            minOf(15.0f, targetPeakRatio / peakFloat) // cap gain at 15x
-                        } else {
-                            1.0f
-                        }
-
-                        if (targetGain > currentGain) {
-                            currentGain += (targetGain - currentGain) * attack
-                        } else {
-                            currentGain += (targetGain - currentGain) * release
-                        }
-
-                        for (i in 0 until (MONO_BYTES / 2)) {
-                            val low = monoBuffer[i * 2].toInt() and 0xFF
-                            val high = monoBuffer[i * 2 + 1].toInt() shl 8
-                            val sample = (low or high).toShort()
-                            var newSample = (sample * currentGain).toInt()
-                            if (newSample > Short.MAX_VALUE) newSample = Short.MAX_VALUE.toInt()
-                            if (newSample < Short.MIN_VALUE) newSample = Short.MIN_VALUE.toInt()
-                            
-                            val newShort = newSample.toShort()
-                            monoBuffer[i * 2] = (newShort.toInt() and 0xFF).toByte()
-                            monoBuffer[i * 2 + 1] = ((newShort.toInt() ushr 8) and 0xFF).toByte()
-                        }
+                        gainCalculator.applyGainCompensation(monoBuffer)
                     }
                 }
 

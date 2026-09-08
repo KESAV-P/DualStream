@@ -91,8 +91,8 @@ fun SenderScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Receiver", style = MaterialTheme.typography.titleMedium, color = iOSWhite)
-                        Text("Phone B", fontSize = 12.sp, color = iOSSecondary)
+                        Text("Sender", style = MaterialTheme.typography.titleMedium, color = iOSWhite)
+                        Text("Phone B — Guest Device", fontSize = 12.sp, color = iOSSecondary)
                     }
                 },
                 navigationIcon = {
@@ -179,10 +179,14 @@ fun SenderScreen(
             // ── 2. Central Stream Button ──────────────────────────────────────
             Spacer(modifier = Modifier.height(16.dp))
 
+            val isConnecting = connectionState is ConnectionState.Discovering || connectionState is ConnectionState.Connecting
+            val isButtonActive = isStreaming || isConnecting
+
             StreamButton(
                 isStreaming = isStreaming,
+                isConnecting = isConnecting,
                 onToggle = {
-                    if (isStreaming) {
+                    if (isButtonActive) {
                         viewModel.stopSender()
                     } else {
                         val intent = mediaProjectionManager.createScreenCaptureIntent()
@@ -292,8 +296,10 @@ fun SenderScreen(
 @Composable
 private fun StreamButton(
     isStreaming: Boolean,
+    isConnecting: Boolean = false,
     onToggle: () -> Unit
 ) {
+    val isActive = isStreaming || isConnecting
     val infiniteTransition = rememberInfiniteTransition(label = "StreamPulse")
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 1f,
@@ -314,14 +320,14 @@ private fun StreamButton(
         label = "PulseAlpha"
     )
 
-    val activeColor = if (isStreaming) iOSRed else iOSBlue
+    val activeColor = if (isActive) iOSRed else iOSBlue
 
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier.size(160.dp)
     ) {
-        // Animated glow ring (only when streaming)
-        if (isStreaming) {
+        // Animated glow ring (only when streaming/connecting)
+        if (isActive) {
             Box(
                 modifier = Modifier
                     .size(160.dp)
@@ -347,13 +353,13 @@ private fun StreamButton(
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = if (isStreaming) "■" else "▶",
+                    text = if (isActive) "■" else "▶",
                     fontSize = 24.sp,
                     color = iOSWhite
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = if (isStreaming) "Stop" else "Start",
+                    text = if (isActive) "Stop" else "Start",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = iOSWhite
